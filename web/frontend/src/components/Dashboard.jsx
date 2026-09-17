@@ -1016,17 +1016,14 @@ function DocumentsView({
             </button>
 
             <div className="topic-modal-header">
-              <div className="topic-modal-badge">
-                <span>🎴 Flashcard Topic Selector</span>
-              </div>
-              <h3 className="topic-modal-title">Select Topic to Study</h3>
+              <h3 className="topic-modal-title">Select Topic</h3>
               <p className="topic-modal-subtitle">
-                Found the following study topics in <strong className="topic-doc-highlight">"{topicModalFile.filename}"</strong>. Select which topic you want to generate cards for:
+                Choose a topic from <strong className="topic-doc-highlight">"{topicModalFile.filename}"</strong>:
               </p>
             </div>
 
             <div className="topic-options-grid">
-              {/* Option 1: Entire Document Overview */}
+              {/* Option 1: Entire Document */}
               <div
                 className={`topic-option-card ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "topic-option-selected" : ""}`}
                 onClick={() => {
@@ -1037,10 +1034,7 @@ function DocumentsView({
                 <div className="topic-card-radio">
                   <span className={`radio-dot ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "active" : ""}`}></span>
                 </div>
-                <div className="topic-card-info">
-                  <span className="topic-card-name">📚 Entire Document (Comprehensive Deck)</span>
-                  <span className="topic-card-hint">Covers all essential terms and summaries across the entire document</span>
-                </div>
+                <span className="topic-card-name">📚 Entire Document</span>
               </div>
 
               {/* Extracted Specific Topics */}
@@ -1059,10 +1053,7 @@ function DocumentsView({
                     <div className="topic-card-radio">
                       <span className={`radio-dot ${isSelected ? "active" : ""}`}></span>
                     </div>
-                    <div className="topic-card-info">
-                      <span className="topic-card-name">🎯 {t}</span>
-                      <span className="topic-card-hint">Deep-dive flashcards scoped specifically to this section</span>
-                    </div>
+                    <span className="topic-card-name">🎯 {t}</span>
                   </div>
                 );
               })}
@@ -1070,13 +1061,10 @@ function DocumentsView({
 
             {/* Custom Topic write-in input */}
             <div className="topic-custom-box">
-              <label className="topic-custom-label">
-                ✏️ Or enter a custom subtopic from this document:
-              </label>
               <input
                 type="text"
                 className="topic-custom-input"
-                placeholder="e.g. specific theorem, formula, or chapter..."
+                placeholder="Or type a custom topic..."
                 value={customTopicInput}
                 onChange={(e) => setCustomTopicInput(e.target.value)}
                 disabled={isModalGenerating}
@@ -1086,15 +1074,15 @@ function DocumentsView({
             {/* Options: Count & Difficulty */}
             <div className="topic-modal-settings">
               <div className="modal-setting-item">
-                <label>Number of Cards:</label>
+                <label>Cards:</label>
                 <select
                   value={cardCountChoice}
                   onChange={(e) => setCardCountChoice(Number(e.target.value))}
                   disabled={isModalGenerating}
                 >
-                  <option value={5}>5 Cards (Quick Review)</option>
-                  <option value={10}>10 Cards (Standard Study)</option>
-                  <option value={15}>15 Cards (Comprehensive Deck)</option>
+                  <option value={5}>5 Cards</option>
+                  <option value={10}>10 Cards</option>
+                  <option value={15}>15 Cards</option>
                 </select>
               </div>
 
@@ -1128,10 +1116,10 @@ function DocumentsView({
                 {isModalGenerating ? (
                   <>
                     <span className="mini-action-spinner" style={{ marginRight: "6px" }}></span>
-                    Generating Cards...
+                    Generating...
                   </>
                 ) : (
-                  `🎴 Generate ${cardCountChoice} Flashcards`
+                  `Generate Flashcards`
                 )}
               </button>
             </div>
