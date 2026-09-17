@@ -1022,85 +1022,87 @@ function DocumentsView({
               </p>
             </div>
 
-            <div className="topic-options-grid">
-              {/* Option 1: Entire Document */}
-              <div
-                className={`topic-option-card ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "topic-option-selected" : ""}`}
-                onClick={() => {
-                  setSelectedTopic(getDocCleanTopic(topicModalFile));
-                  setCustomTopicInput("");
-                }}
-              >
-                <div className="topic-card-radio">
-                  <span className={`radio-dot ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "active" : ""}`}></span>
-                </div>
-                <span className="topic-card-name">📚 Entire Document</span>
-              </div>
-
-              {/* Extracted Specific Topics */}
-              {topicModalList.map((t, idx) => {
-                if (t === getDocCleanTopic(topicModalFile)) return null;
-                const isSelected = selectedTopic === t && !customTopicInput;
-                return (
-                  <div
-                    key={idx}
-                    className={`topic-option-card ${isSelected ? "topic-option-selected" : ""}`}
-                    onClick={() => {
-                      setSelectedTopic(t);
-                      setCustomTopicInput("");
-                    }}
-                  >
-                    <div className="topic-card-radio">
-                      <span className={`radio-dot ${isSelected ? "active" : ""}`}></span>
-                    </div>
-                    <span className="topic-card-name">🎯 {t}</span>
+            <div className="topic-modal-body">
+              <div className="topic-options-grid">
+                {/* Option 1: Entire Document */}
+                <div
+                  className={`topic-option-card ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "topic-option-selected" : ""}`}
+                  onClick={() => {
+                    setSelectedTopic(getDocCleanTopic(topicModalFile));
+                    setCustomTopicInput("");
+                  }}
+                >
+                  <div className="topic-card-radio">
+                    <span className={`radio-dot ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "active" : ""}`}></span>
                   </div>
-                );
-              })}
-            </div>
+                  <span className="topic-card-name">📚 Entire Document</span>
+                </div>
 
-            {/* Custom Topic write-in input */}
-            <div className="topic-custom-box">
-              <input
-                type="text"
-                className="topic-custom-input"
-                placeholder="Or type a custom topic..."
-                value={customTopicInput}
-                onChange={(e) => setCustomTopicInput(e.target.value)}
-                disabled={isModalGenerating}
-              />
-            </div>
-
-            {/* Options: Count & Difficulty */}
-            <div className="topic-modal-settings">
-              <div className="modal-setting-item">
-                <label>Cards:</label>
-                <select
-                  value={cardCountChoice}
-                  onChange={(e) => setCardCountChoice(Number(e.target.value))}
-                  disabled={isModalGenerating}
-                >
-                  <option value={5}>5 Cards</option>
-                  <option value={10}>10 Cards</option>
-                  <option value={15}>15 Cards</option>
-                </select>
+                {/* Extracted Specific Topics */}
+                {topicModalList.map((t, idx) => {
+                  if (t === getDocCleanTopic(topicModalFile)) return null;
+                  const isSelected = selectedTopic === t && !customTopicInput;
+                  return (
+                    <div
+                      key={idx}
+                      className={`topic-option-card ${isSelected ? "topic-option-selected" : ""}`}
+                      onClick={() => {
+                        setSelectedTopic(t);
+                        setCustomTopicInput("");
+                      }}
+                    >
+                      <div className="topic-card-radio">
+                        <span className={`radio-dot ${isSelected ? "active" : ""}`}></span>
+                      </div>
+                      <span className="topic-card-name">🎯 {t}</span>
+                    </div>
+                  );
+                })}
               </div>
 
-              <div className="modal-setting-item">
-                <label>Difficulty:</label>
-                <select
-                  value={difficultyChoice}
-                  onChange={(e) => setDifficultyChoice(e.target.value)}
+              {/* Custom Topic write-in input */}
+              <div className="topic-custom-box">
+                <input
+                  type="text"
+                  className="topic-custom-input"
+                  placeholder="Or type a custom topic..."
+                  value={customTopicInput}
+                  onChange={(e) => setCustomTopicInput(e.target.value)}
                   disabled={isModalGenerating}
-                >
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
-                </select>
+                />
+              </div>
+
+              {/* Options: Count & Difficulty */}
+              <div className="topic-modal-settings">
+                <div className="modal-setting-item">
+                  <label>Cards:</label>
+                  <select
+                    value={cardCountChoice}
+                    onChange={(e) => setCardCountChoice(Number(e.target.value))}
+                    disabled={isModalGenerating}
+                  >
+                    <option value={5}>5 Cards</option>
+                    <option value={10}>10 Cards</option>
+                    <option value={15}>15 Cards</option>
+                  </select>
+                </div>
+
+                <div className="modal-setting-item">
+                  <label>Difficulty:</label>
+                  <select
+                    value={difficultyChoice}
+                    onChange={(e) => setDifficultyChoice(e.target.value)}
+                    disabled={isModalGenerating}
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                </div>
               </div>
             </div>
 
-            <div className="modal-actions">
+            <div className="modal-actions topic-modal-actions">
               <button
                 className="modal-btn-cancel"
                 onClick={() => setTopicModalFile(null)}

@@ -2199,21 +2199,23 @@
 .topic-modal-card {
   max-width: 460px;
   width: 92%;
-  padding: 22px 24px;
-  max-height: 85vh;
-  overflow-y: auto;
+  max-height: 88vh;
+  padding: 0 !important;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  border-radius: 14px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(124, 58, 237, 0.15);
 }
 
 .topic-modal-header {
+  padding: 20px 22px 14px 22px;
   text-align: left;
+  flex-shrink: 0;
 }
 
 .topic-modal-title {
-  font-size: 1.18rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--color-text-primary);
   margin: 0 0 4px 0;
@@ -2224,6 +2226,7 @@
   color: var(--color-text-secondary);
   line-height: 1.4;
   margin: 0;
+  word-break: break-word;
 }
 
 .topic-doc-highlight {
@@ -2231,13 +2234,45 @@
   font-weight: 600;
 }
 
+.topic-modal-body {
+  padding: 0 22px 14px 22px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-modal-body::-webkit-scrollbar {
+  width: 5px;
+}
+.topic-modal-body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+.topic-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
 .topic-options-grid {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 240px;
+  max-height: 200px;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 4px;
+}
+
+.topic-options-grid::-webkit-scrollbar {
+  width: 5px;
+}
+.topic-options-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+.topic-options-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
 }
 
 .topic-option-card {
@@ -2250,6 +2285,7 @@
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
+  user-select: none;
 }
 
 .topic-option-card:hover {
@@ -2289,6 +2325,7 @@
   font-weight: 500;
   color: var(--color-text-primary);
   line-height: 1.3;
+  word-break: break-word;
 }
 
 .topic-custom-box {
@@ -2305,6 +2342,7 @@
   font-size: 0.82rem;
   outline: none;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .topic-custom-input:focus {
@@ -2335,29 +2373,58 @@
 }
 
 .modal-setting-item select {
-  padding: 6px 10px;
+  padding: 7px 10px;
   background: var(--color-input-bg);
   border: 1px solid var(--color-input-border);
   border-radius: 6px;
   color: var(--color-text-primary);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   cursor: pointer;
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.modal-setting-item select:focus {
+  border-color: #f59e0b;
+}
+
+.topic-modal-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px 18px 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(15, 23, 42, 0.4);
+  flex-shrink: 0;
+}
+
+.topic-modal-actions .modal-btn-cancel {
+  flex: 1;
+  padding: 10px 16px;
+  font-size: 0.86rem;
+  border-radius: 8px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-btn-generate {
+  flex: 2;
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: #ffffff;
   border: none;
-  padding: 9px 18px;
+  padding: 10px 18px;
   border-radius: 8px;
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+  min-height: 42px;
 }
 
 .modal-btn-generate:hover:not(:disabled) {
@@ -2369,4 +2436,80 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Mobile Responsiveness for Topic Modal */
+@media (max-width: 600px) {
+  .topic-modal-card {
+    width: 95% !important;
+    max-width: 420px;
+    max-height: 90vh;
+    border-radius: 14px;
+  }
+
+  .topic-modal-header {
+    padding: 16px 16px 10px 16px;
+  }
+
+  .topic-modal-title {
+    font-size: 1.1rem;
+  }
+
+  .topic-modal-subtitle {
+    font-size: 0.78rem;
+  }
+
+  .topic-modal-body {
+    padding: 0 16px 10px 16px;
+    gap: 10px;
+  }
+
+  .topic-options-grid {
+    max-height: 150px;
+    gap: 5px;
+  }
+
+  .topic-option-card {
+    padding: 8px 10px;
+  }
+
+  .topic-card-name {
+    font-size: 0.8rem;
+  }
+
+  .topic-custom-input {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+  }
+
+  .topic-modal-settings {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .modal-setting-item label {
+    font-size: 0.72rem;
+  }
+
+  .modal-setting-item select {
+    padding: 6px 8px;
+    font-size: 0.78rem;
+  }
+
+  .topic-modal-actions {
+    padding: 12px 16px 14px 16px;
+    gap: 8px;
+  }
+
+  .topic-modal-actions .modal-btn-cancel {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    min-height: 38px;
+  }
+
+  .modal-btn-generate {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    min-height: 38px;
+  }
 }
