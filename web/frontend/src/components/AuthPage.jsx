@@ -1,6 +1,7 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
+import { Bot, BookOpen, Target } from "lucide-react";
 import "./AuthPage.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
@@ -110,7 +111,7 @@ function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
         </p>
 
         <div className="auth-feature">
-          <span className="auth-feature-icon">🤖</span>
+          <span className="auth-feature-icon"><Bot size={20} /></span>
           <div>
             <div className="auth-feature-title">RAG-Powered Chatbot</div>
             <div className="auth-feature-desc">Ask questions about your study material</div>
@@ -118,7 +119,7 @@ function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
         </div>
 
         <div className="auth-feature">
-          <span className="auth-feature-icon">📖</span>
+          <span className="auth-feature-icon"><BookOpen size={20} /></span>
           <div>
             <div className="auth-feature-title">Knowledge Graph</div>
             <div className="auth-feature-desc">Visualize connections between concepts</div>
@@ -126,7 +127,7 @@ function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
         </div>
 
         <div className="auth-feature">
-          <span className="auth-feature-icon">🎯</span>
+          <span className="auth-feature-icon"><Target size={20} /></span>
           <div>
             <div className="auth-feature-title">Smart Study Planner</div>
             <div className="auth-feature-desc">AI identifies weak topics & plans your path</div>

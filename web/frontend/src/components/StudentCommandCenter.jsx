@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { Flame, BarChart3 } from "lucide-react";
 import "./StudentCommandCenter.css";
 
 export default function StudentCommandCenter({ onNavigate, files = [] }) {
@@ -180,7 +181,7 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
         <div className="command-metrics-cluster">
           {/* Streak Counter */}
           <div className="streak-badge-card" title={`${streakDays} consecutive day${streakDays > 1 ? "s" : ""} of active study`}>
-            <div className="streak-flame-icon">🔥</div>
+            <Flame className="streak-flame-icon" size={20} />
             <div className="streak-text-group">
               <span className="streak-count">{streakDays}-Day Streak</span>
               <span className="streak-sub">
@@ -245,8 +246,8 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
             <p className="jump-back-meta">
               <span className="meta-pill">
                 {lastStudied
-                  ? `${lastStudied.type === "quiz" ? "🎯" : lastStudied.type === "chat" ? "💬" : "🗂️"} ${lastStudied.subText || "Active session"}`
-                  : "🎯 Flashcards & Quizzes ready"}
+                  ? lastStudied.subText || "Active session"
+                  : "Flashcards & Quizzes ready"}
               </span>
               <span className="meta-dot">•</span>
               <span className="meta-time">
@@ -268,7 +269,7 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
         {/* Weekly Mastery Pulse Mini Analytics */}
         <div className="mastery-pulse-card">
           <div className="pulse-card-header">
-            <span className="pulse-icon">📊</span>
+            <BarChart3 className="pulse-icon" size={16} />
             <h4 className="pulse-heading">Weekly Mastery Pulse</h4>
           </div>
           <div className="pulse-badges-row">

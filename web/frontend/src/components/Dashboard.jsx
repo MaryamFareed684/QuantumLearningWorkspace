@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
+import { FileText, MessageSquare, Layers, Target, BarChart3, Map, Network, Brain, RefreshCw, BookOpen, X, AlertTriangle, Globe, Clock, CheckCircle2, Search, Send, ChevronDown, RotateCcw, ChevronsLeft, ChevronsRight } from "lucide-react";
 import ProfileView from "./ProfileView.jsx";
 import QuizView from "./QuizView.jsx";
 import QuizResultsView from "./QuizResultsView.jsx";
 import FlashcardsView from "./FlashcardsView.jsx";
-import RecommendedNextSteps from "./RecommendedNextSteps.jsx";
 import StudyRoadmapView from "./StudyRoadmapView.jsx";
 import LogoutModal from "./LogoutModal.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
@@ -22,6 +22,25 @@ import StudentCommandCenter from "./StudentCommandCenter.jsx";
 
 
 function SidebarNav({ activeTab, setActiveTab, onRequestLogout }) {
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      const saved = localStorage.getItem("studymind_sidebar_expanded");
+      return saved === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleExpanded = () => {
+    setExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("studymind_sidebar_expanded", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const { userEmail } = useAuth();
   const getInitialLetter = () => {
     const saved = localStorage.getItem("studymind_user_name");
@@ -39,20 +58,20 @@ function SidebarNav({ activeTab, setActiveTab, onRequestLogout }) {
   }, [userEmail]);
 
   const navItems = [
-    { id: "documents", icon: "📄", label: "Documents" },
-    { id: "chat", icon: "💬", label: "AI Chat" },
-    { id: "flashcards", icon: "🎴", label: "Flashcards" },
-    { id: "quiz", icon: "🎯", label: "Quiz" },
-    { id: "results", icon: "📊", label: "Results" },
-    { id: "roadmap", icon: "🗺️", label: "Study Roadmap" },
-    { id: "graph", icon: "🌐", label: "Knowledge Graph" },
+    { id: "documents", icon: FileText, label: "Documents" },
+    { id: "chat", icon: MessageSquare, label: "AI Chat" },
+    { id: "flashcards", icon: Layers, label: "Flashcards" },
+    { id: "quiz", icon: Target, label: "Quiz" },
+    { id: "results", icon: BarChart3, label: "Results" },
+    { id: "roadmap", icon: Map, label: "Study Roadmap" },
+    { id: "graph", icon: Network, label: "Knowledge Graph" },
   ];
 
   return (
-    <aside className="sidebar-nav">
+    <aside className={`sidebar-nav ${expanded ? "expanded" : ""}`}>
       {/* Logo */}
       <div className="sidebar-logo-area">
-        <span className="logo-icon">🧠</span>
+        <Brain className="logo-icon" size={26} strokeWidth={2.25} />
       </div>
 
       {/* Navigation Items */}
@@ -64,8 +83,9 @@ function SidebarNav({ activeTab, setActiveTab, onRequestLogout }) {
             onClick={() => setActiveTab(item.id)}
             title={item.label}
           >
-            <span className="nav-icon">{item.icon}</span>
-            <span className="nav-tooltip">{item.label}</span>
+            <span className="nav-icon"><item.icon size={20} strokeWidth={2} /></span>
+              <span className="nav-label">{item.label}</span>
+              <span className="nav-tooltip">{item.label}</span>
             {activeTab === item.id && (
               <span className="nav-indicator"></span>
             )}
@@ -73,7 +93,16 @@ function SidebarNav({ activeTab, setActiveTab, onRequestLogout }) {
         ))}
       </nav>
 
-      {/* Bottom: User + Logout */}
+      <button
+          className="sidebar-collapse-btn"
+          onClick={toggleExpanded}
+          title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+          type="button"
+        >
+          {expanded ? <ChevronsLeft size={16} /> : <ChevronsRight size={16} />}
+        </button>
+
+        {/* Bottom: User + Logout */}
       <div className="sidebar-bottom">
         <div
           className={`user-avatar-circle ${activeTab === "profile" || activeTab === "settings" ? "active-profile-avatar" : ""}`}
@@ -653,10 +682,7 @@ function DocumentsView({
       {/* Executive Learning Hub — Student Command Center */}
       <StudentCommandCenter onNavigate={onNavigate} files={files} />
 
-      {/* Recommended Next Steps Summary Section */}
-      <RecommendedNextSteps onNavigate={onNavigate} />
-
-      {/* Upload Card */}
+            {/* Upload Card */}
       <div className="upload-card">
         <h3>Upload Document</h3>
         <p className="upload-subtitle">Add PDFs, documents, or lecture notes to your knowledge base</p>
@@ -695,9 +721,7 @@ function DocumentsView({
           <h3>Knowledge Library</h3>
           <div className="header-actions">
             <span className="file-count-badge">{files.length} file{files.length !== 1 ? "s" : ""}</span>
-            <button className="btn-refresh" onClick={() => fetchUploads(false)} title="Refresh">
-              🔄
-            </button>
+            <button className="btn-refresh" onClick={() => fetchUploads(false)} title="Refresh"><RefreshCw size={16} /></button>
           </div>
         </div>
 
@@ -714,8 +738,8 @@ function DocumentsView({
             onChange={setStatusFilter}
             options={[
               { value: "All", label: "All Status" },
-              { value: "Processing", label: "⏳ Processing" },
-              { value: "Ready", label: "✓ Ready" },
+              { value: "Processing", label: "Processing" },
+              { value: "Ready", label: "Ready" },
             ]}
           />
 
@@ -750,7 +774,7 @@ function DocumentsView({
 
         {!loading && !error && files.length === 0 && (
           <div className="empty-state">
-            <span className="empty-icon">📚</span>
+            <BookOpen className="empty-icon" size={44} strokeWidth={1.75} />
             <p className="empty-title">No documents yet - upload your first file to get started</p>
             <p className="empty-subtitle">Upload your first PDF to start studying with AI</p>
           </div>
@@ -786,7 +810,7 @@ function DocumentsView({
                   className={`file-row ${isDeleting ? "deleting" : ""}`}
                 >
                   <div className="file-row-main">
-                    <div className="file-icon-box">📄</div>
+                    <div className="file-icon-box"><FileText size={20} /></div>
                     <div className="file-info">
                       <span className="file-name-text" title={file.filename}>
                         {file.filename}
@@ -800,8 +824,7 @@ function DocumentsView({
                         ? new Date(file.upload_date).toLocaleDateString("en-US", {
                             month: "short", day: "numeric", year: "numeric",
                           })
-                        : "Unknown"}
-                    </span>
+                        : "Unknown"}                    </span>
 
                     <div className={`status-pill ${isProcessing ? "status-processing" : "status-ready"}`}>
                       <span className={`status-dot ${isProcessing ? "pulse-dot" : "solid-dot"}`}></span>
@@ -849,7 +872,7 @@ function DocumentsView({
                         disabled={isProcessing || !!currentLoading}
                         title={isProcessing ? "File is processing" : `Ask questions about ${file.filename}`}
                       >
-                        <span className="action-icon">💬</span>
+                        <span className="action-icon"><MessageSquare size={14} /></span>
                         <span className="action-label">Ask AI</span>
                       </button>
 
@@ -866,12 +889,11 @@ function DocumentsView({
                           </>
                         ) : (
                           <>
-                            <span className="action-icon">🎯</span>
+                            <span className="action-icon"><Target size={14} /></span>
                             <span className="action-label">Generate Quiz</span>
                           </>
                         )}
                       </button>
-
                       <button
                         className={`btn-doc-action btn-action-flashcards ${isProcessing ? "disabled" : ""}`}
                         onClick={() => !isProcessing && handleOpenFlashcardTopics(file)}
@@ -885,7 +907,7 @@ function DocumentsView({
                           </>
                         ) : (
                           <>
-                            <span className="action-icon">🎴</span>
+                            <span className="action-icon"><Layers size={14} /></span>
                             <span className="action-label">Generate Flashcards</span>
                           </>
                         )}
@@ -904,7 +926,7 @@ function DocumentsView({
                           </>
                         ) : (
                           <>
-                            <span className="action-icon">🗺️</span>
+                            <span className="action-icon"><Map size={14} /></span>
                             <span className="action-label">Generate Study Roadmap</span>
                           </>
                         )}
@@ -920,7 +942,7 @@ function DocumentsView({
 
                     {currentError && (
                       <div className="doc-action-error-pill">
-                        <span className="error-icon">⚠️</span>
+                        <span className="error-icon"><AlertTriangle size={14} /></span>
                         <span className="error-text">
                           {currentError.message}
                           {currentError.detail ? `: ${currentError.detail}` : ""}
@@ -929,14 +951,14 @@ function DocumentsView({
                           className="btn-retry-action"
                           onClick={() => handleActionRetry(file, currentError.action)}
                         >
-                          ↺ Retry
+                          <RotateCcw size={13} /> Retry
                         </button>
                         <button
                           className="btn-dismiss-error"
                           onClick={() => clearActionError(file.id)}
                           title="Dismiss"
                         >
-                          ✕
+                          <X size={14} />
                         </button>
                       </div>
                     )}
@@ -957,10 +979,10 @@ function DocumentsView({
               onClick={() => setFileToDelete(null)}
               title="Close"
             >
-              ✕
+              <X size={18} />
             </button>
             <div className="modal-icon-wrap">
-              <span className="modal-warning-icon">⚠️</span>
+              <AlertTriangle className="modal-warning-icon" size={34} strokeWidth={1.75} />
             </div>
             <h3 className="modal-title">Delete Document</h3>
             <p className="modal-desc">
@@ -1012,7 +1034,7 @@ function DocumentsView({
               disabled={isModalGenerating}
               title="Close"
             >
-              ✕
+              <X size={14} />
             </button>
 
             <div className="topic-modal-header">
@@ -1035,7 +1057,7 @@ function DocumentsView({
                   <div className="topic-card-radio">
                     <span className={`radio-dot ${selectedTopic === getDocCleanTopic(topicModalFile) && !customTopicInput ? "active" : ""}`}></span>
                   </div>
-                  <span className="topic-card-name">📚 Entire Document</span>
+                  <span className="topic-card-name"><BookOpen size={13} style={{ verticalAlign: "middle", marginRight: "6px" }} />Entire Document</span>
                 </div>
 
                 {/* Extracted Specific Topics */}
@@ -1054,7 +1076,7 @@ function DocumentsView({
                       <div className="topic-card-radio">
                         <span className={`radio-dot ${isSelected ? "active" : ""}`}></span>
                       </div>
-                      <span className="topic-card-name">🎯 {t}</span>
+                      <span className="topic-card-name"><Target size={13} style={{ verticalAlign: "middle", marginRight: "6px" }} />{t}</span>
                     </div>
                   );
                 })}
@@ -1268,7 +1290,7 @@ function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
         onClick={() => setIsOpen(!isOpen)}
       >
         <span className="scope-dropdown-label">{selectedLabel}</span>
-        <span className={`scope-dropdown-arrow ${isOpen ? "open" : ""}`}>▾</span>
+        <ChevronDown size={14} className={`scope-dropdown-arrow ${isOpen ? "open" : ""}`} />
       </button>
 
       {isOpen && (
@@ -1281,7 +1303,7 @@ function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
             }}
           >
             <span className="scope-doc-name">All Documents</span>
-            <span className="scope-doc-badge">🌐 Global</span>
+            <span className="scope-doc-badge"><Globe size={12} /> Global</span>
           </div>
           {files.map((file) => {
             const isProcessing = (file.status || "").toLowerCase() === "processing";
@@ -1301,7 +1323,7 @@ function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
               >
                 <span className="scope-doc-name">{file.filename}</span>
                 <span className="scope-doc-badge">
-                  {isProcessing ? "⏳ Processing" : "✓ Ready"}
+                  {isProcessing ? (<><Clock size={12} /> Processing</>) : (<><CheckCircle2 size={12} /> Ready</>)}
                 </span>
               </div>
             );
@@ -1526,7 +1548,7 @@ function ChatView({ targetDocument, setTargetDocument }) {
       {/* Chat Header Bar */}
       <div className="chat-header-bar">
         <div className="chat-doc-selector-container">
-          <span className="selector-icon">🎯 Scope:</span>
+          <span className="selector-icon"><Target size={14} /> Scope:</span>
           <ScopeDropdown
             targetDocument={targetDocument}
             setTargetDocument={setTargetDocument}
@@ -1538,7 +1560,7 @@ function ChatView({ targetDocument, setTargetDocument }) {
               onClick={() => setTargetDocument(null)}
               title="Clear active document filter"
             >
-              ✕ Clear Filter
+              <X size={14} /> Clear Filter
             </button>
           )}
         </div>
@@ -1596,14 +1618,14 @@ function ChatView({ targetDocument, setTargetDocument }) {
                         }
                       }}
                     >
-                      <span style={{ fontSize: "0.9rem" }}>↺</span> Retry
+                      <RotateCcw size={14} /> Retry
                     </button>
                   </div>
                 )}
 
                 {msg.sources && msg.sources.length > 0 && !/^(hello|hi|hey)[!,.\s]/i.test(msg.content.trim()) && (
                   <div className="msg-sources">
-                    <span className="sources-title">🔍 Sources:</span>
+                    <span className="sources-title"><Search size={13} /> Sources:</span>
                     <div className="sources-list">
                       {msg.sources.map((src, i) => (
                         <span key={i} className="source-chip" title={src.chunk}>
@@ -1653,7 +1675,7 @@ function ChatView({ targetDocument, setTargetDocument }) {
           disabled={isLoading}
         />
         <button type="submit" className="btn-send-chat" disabled={!input.trim() || isLoading}>
-          ➤
+          <Send size={16} />
         </button>
       </form>
     </div>

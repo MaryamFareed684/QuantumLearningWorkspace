@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { Map, Target, AlertTriangle, ClipboardList, Clock } from "lucide-react";
 import "./StudyRoadmapView.css";
 
 // Accent colours keyed to priority
@@ -75,7 +76,6 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
           if (data.subject) setSubject(data.subject);
           setHasActivity(true);
         } else {
-          // Backend returned empty steps — user has no activity yet
           setSteps([]);
           setHasActivity(false);
         }
@@ -83,7 +83,6 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
         if (!active) return;
         setError("Could not load your roadmap right now. Using default suggestions.");
 
-        // Graceful fallback — show default curated steps so page is never blank
         setSteps([
           {
             step_number: 1,
@@ -119,7 +118,7 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
             target_tab: "flashcards",
           },
         ]);
-        setHasActivity(true); // Show steps even in fallback
+        setHasActivity(true);
       } finally {
         if (active) setLoading(false);
       }
@@ -135,10 +134,11 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
 
   return (
     <div className="roadmap-page">
-      {/* ── Page Header ─────────────────────────────────────── */}
       <header className="roadmap-page-header">
         <div className="roadmap-page-title-group">
-          <div className="roadmap-page-icon">🗺️</div>
+          <div className="roadmap-page-icon">
+            <Map size={24} strokeWidth={2.25} color="#ffffff" />
+          </div>
           <div>
             <h1 className="roadmap-page-heading">Study Roadmap</h1>
             <p className="roadmap-page-subtitle">
@@ -148,20 +148,19 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
         </div>
         {!loading && steps.length > 0 && (
           <div className="roadmap-subject-badge">
-            <span>🎯</span>
+            <Target size={14} />
             {steps.length} Steps Planned
           </div>
         )}
       </header>
 
-      {/* ── Error Banner ─────────────────────────────────────── */}
       {error && (
         <div className="roadmap-error-banner" role="alert">
-          ⚠️ {error}
+          <AlertTriangle size={16} />
+          {error}
         </div>
       )}
 
-      {/* ── Loading ──────────────────────────────────────────── */}
       {loading && (
         <ol className="roadmap-skeleton-list" aria-label="Loading roadmap…">
           <SkeletonStep />
@@ -170,10 +169,11 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
         </ol>
       )}
 
-      {/* ── Empty State — no activity yet ────────────────────── */}
       {!loading && !hasActivity && steps.length === 0 && (
         <div className="roadmap-empty-state" role="status">
-          <div className="roadmap-empty-icon">📋</div>
+          <div className="roadmap-empty-icon">
+            <ClipboardList size={44} strokeWidth={1.75} />
+          </div>
           <h2 className="roadmap-empty-title">No Roadmap Yet</h2>
           <p className="roadmap-empty-desc">
             Take a quiz to get your personalised study roadmap. The AI will identify your weak topics
@@ -184,12 +184,12 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
             type="button"
             onClick={() => handleAction("quiz")}
           >
-            🎯 Take a Quiz Now
+            <Target size={16} />
+            Take a Quiz Now
           </button>
         </div>
       )}
 
-      {/* ── Steps List ───────────────────────────────────────── */}
       {!loading && steps.length > 0 && (
         <ol className="roadmap-steps-list" aria-label="Study roadmap steps">
           {steps.map((step) => {
@@ -202,21 +202,19 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
                 className="roadmap-step-item"
                 style={{ "--step-accent": accent }}
               >
-                {/* Number circle */}
                 <div className="roadmap-step-number" aria-label={`Step ${step.step_number}`}>
                   {step.step_number}
                 </div>
 
-                {/* Content */}
                 <div className="roadmap-step-content">
                   <div className="roadmap-step-top">
                     <h3 className="roadmap-step-topic">{step.topic}</h3>
                     <span className={`roadmap-priority-pill ${priorityKey}`}>
                       {priorityKey === "high"
-                        ? "🔴 High"
+                        ? "High"
                         : priorityKey === "medium"
-                        ? "🟡 Medium"
-                        : "🟢 Recommended"}
+                        ? "Medium"
+                        : "Recommended"}
                     </span>
                   </div>
 
@@ -224,7 +222,8 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
 
                   <div className="roadmap-step-footer">
                     <span className="roadmap-step-duration">
-                      ⏱️ {step.estimated_duration || "1–2 days"}
+                      <Clock size={14} />
+                      {step.estimated_duration || "1–2 days"}
                     </span>
                     <button
                       type="button"

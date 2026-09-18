@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
+import { CheckCircle2, Circle, FileText, MessageSquare, Zap, User, Lock, Palette, AlertTriangle, UserCog } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import LogoutModal from "./LogoutModal.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
@@ -256,7 +257,7 @@ export default function ProfileView({ onRequestLogout }) {
       }
 
       setFormMsg({
-        text: "✓ Password changed successfully! Logging out... Please log in with your new password.",
+        text: "Password changed successfully! Logging out... Please log in with your new password.",
         type: "success",
       });
 
@@ -292,17 +293,17 @@ export default function ProfileView({ onRequestLogout }) {
       {/* Stats Cards */}
       <div className="profile-stats">
         <div className="stat-card">
-          <div className="stat-icon">📄</div>
+          <div className="stat-icon"><FileText size={20} /></div>
           <div className="stat-value">{profileData.document_count}</div>
           <div className="stat-label">Documents Uploaded</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">💬</div>
+          <div className="stat-icon"><MessageSquare size={20} /></div>
           <div className="stat-value">{profileData.question_count ?? 0}</div>
           <div className="stat-label">Questions Asked</div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">⚡</div>
+          <div className="stat-icon"><Zap size={20} /></div>
           <div className="stat-value">3</div>
           <div className="stat-label">Days Active</div>
         </div>
@@ -312,7 +313,7 @@ export default function ProfileView({ onRequestLogout }) {
       <div className="profile-sections">
         {/* Account Information Card */}
         <div className="profile-section-card">
-          <h3>👤 Account Information</h3>
+          <h3><User size={16} style={{ verticalAlign: "middle", marginRight: "6px" }} />Account Information</h3>
           <div className="info-row">
             <span className="info-label">Display Name</span>
             <span className="info-value">{profileData.name || "Student User"}</span>
@@ -343,7 +344,7 @@ export default function ProfileView({ onRequestLogout }) {
 
         {/* Edit Profile & Display Name Card */}
         <div className="profile-section-card">
-          <h3>✏️ Edit Profile & Display Name</h3>
+          <h3><UserCog size={16} style={{ verticalAlign: "middle", marginRight: "6px" }} />Edit Profile & Display Name</h3>
           <p className="profile-edit-subtext">
             Change your display name and username. These will be visible on your Dashboard, greetings, and AI study sessions.
           </p>
@@ -449,16 +450,16 @@ export default function ProfileView({ onRequestLogout }) {
               {/* Password Requirements */}
               <div className="password-requirements">
                 <div className={`req-item ${hasLength ? "met" : ""}`}>
-                  <span className="req-icon">{hasLength ? "✓" : "○"}</span> At least 6 characters
+                  <span className="req-icon">{hasLength ? <CheckCircle2 size={13} /> : <Circle size={13} />}</span> At least 6 characters
                 </div>
                 <div className={`req-item ${hasUpper ? "met" : ""}`}>
-                  <span className="req-icon">{hasUpper ? "✓" : "○"}</span> At least 1 uppercase letter
+                  <span className="req-icon">{hasUpper ? <CheckCircle2 size={13} /> : <Circle size={13} />}</span> At least 1 uppercase letter
                 </div>
                 <div className={`req-item ${hasLower ? "met" : ""}`}>
-                  <span className="req-icon">{hasLower ? "✓" : "○"}</span> At least 1 lowercase letter
+                  <span className="req-icon">{hasLower ? <CheckCircle2 size={13} /> : <Circle size={13} />}</span> At least 1 lowercase letter
                 </div>
                 <div className={`req-item ${hasNumber ? "met" : ""}`}>
-                  <span className="req-icon">{hasNumber ? "✓" : "○"}</span> At least 1 number
+                  <span className="req-icon">{hasNumber ? <CheckCircle2 size={13} /> : <Circle size={13} />}</span> At least 1 number
                 </div>
               </div>
             </div>
@@ -508,7 +509,7 @@ export default function ProfileView({ onRequestLogout }) {
 
         {/* Appearance & Preferences Card */}
         <div className="profile-section-card full-width">
-          <h3>🎨 Appearance & Preferences</h3>
+          <h3><Palette size={16} style={{ verticalAlign: "middle", marginRight: "6px" }} />Appearance &amp; Preferences</h3>
           <div className="info-row">
             <div>
               <span className="info-label" style={{ display: "block", fontSize: "0.9rem", fontWeight: "600", color: "var(--color-text-primary)" }}>Theme</span>
@@ -546,7 +547,7 @@ export default function ProfileView({ onRequestLogout }) {
 
         {/* Danger Zone */}
         <div className="danger-zone full-width">
-          <h3>⚠️ Danger Zone</h3>
+          <h3><AlertTriangle size={16} style={{ verticalAlign: "middle", marginRight: "6px" }} />Danger Zone</h3>
           <p>Irreversible actions. Please be careful.</p>
           <button
             className="btn-delete-account"
