@@ -183,11 +183,14 @@ async def signup(request: SignupRequest):
         raise HTTPException(status_code=400, detail="Email already registered.")
 
     hashed = hash_password(request.password)
+    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     new_user = {
         "email": email_clean,
         "hashed_password": hashed,
         "created_at": datetime.now(timezone.utc).strftime("%B %d, %Y"),
+        "login_dates": [today_iso],
+        "last_login": datetime.now(timezone.utc),
     }
 
     await users.insert_one(new_user)
@@ -206,17 +209,54 @@ async def login(request: LoginRequest):
     if not verify_password(request.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
+    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    await users.update_one(
+        {"email": email_clean},
+        {
+            "$addToSet": {"login_dates": today_iso},
+            "$set": {"last_login": datetime.now(timezone.utc)},
+        }
+    )
+
     token = create_access_token(email=user["email"])
     return {"access_token": token, "token_type": "bearer"}
 
 
 @app.get("/me")
-async def get_my_profile(current_user_email: str = Depends(get_current_user_email)):
+async def get_my_profile(
+    tz: Optional[str] = None,
+    current_user_email: str = Depends(get_current_user_email),
+):
     users = get_users_collection()
     email_clean = current_user_email.strip().lower()
     user = await users.find_one({"email": email_clean})
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+
+    # Determine user's local timezone
+    user_tz = timezone.utc
+    if tz and tz.strip():
+        try:
+            user_tz = ZoneInfo(tz.strip())
+        except Exception:
+            user_tz = timezone.utc
+
+    today_local = datetime.now(user_tz).strftime("%Y-%m-%d")
+
+    # Record login / active date
+    await users.update_one(
+        {"email": email_clean},
+        {
+            "$addToSet": {"login_dates": today_local},
+            "$set": {"last_active": datetime.now(timezone.utc)},
+        }
+    )
+
+    # Calculate distinct days active from login_dates
+    login_dates_list = user.get("login_dates") or []
+    login_dates_set = set(login_dates_list)
+    login_dates_set.add(today_local)
+    days_active = max(len(login_dates_set), 1)
 
     uploads = get_uploads_collection()
     upload_count = await uploads.count_documents({"user_id": email_clean})
@@ -232,6 +272,7 @@ async def get_my_profile(current_user_email: str = Depends(get_current_user_emai
         "username": user.get("username") or user["email"].split("@")[0],
         "created_at": str(created_at),
         "document_count": upload_count,
+        "days_active": days_active,
     }
 
 
