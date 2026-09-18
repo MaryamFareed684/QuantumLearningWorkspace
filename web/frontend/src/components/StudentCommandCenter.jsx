@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Flame, BarChart3 } from "lucide-react";
 import "./StudentCommandCenter.css";
@@ -11,6 +11,7 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
     weakTopics: 0,
   });
   const [streakDays, setStreakDays] = useState(1);
+  const [streakActiveToday, setStreakActiveToday] = useState(false);
   const [goalPercent, setGoalPercent] = useState(25);
   const [goalsCompleted, setGoalsCompleted] = useState(1);
 
@@ -93,19 +94,24 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
   // Fetch real review stats, live streak, and daily goal progress from backend
   useEffect(() => {
     let isMounted = true;
+    let midnightTimerId = null;
     const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
     async function fetchStatsAndActivity() {
       if (!token) return;
       try {
-        // 1. Live Study Pulse: Real Streak, Goal %, Mastery from MongoDB
-        const pulseRes = await fetch(`${API_BASE}/analytics/study-pulse`, {
+        // Detect user's local timezone (e.g. "Asia/Karachi", "America/New_York", etc.)
+        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+        // 1. Live Study Pulse: Real Streak, Goal %, Mastery from MongoDB scoped to local midnight
+        const pulseRes = await fetch(`${API_BASE}/analytics/study-pulse?tz=${encodeURIComponent(userTz)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (pulseRes.ok) {
           const pulseData = await pulseRes.json();
           if (isMounted && pulseData) {
             if (pulseData.streak_days !== undefined) setStreakDays(pulseData.streak_days);
+            if (pulseData.streak_active_today !== undefined) setStreakActiveToday(pulseData.streak_active_today);
             if (pulseData.goal_percent !== undefined) setGoalPercent(pulseData.goal_percent);
             if (pulseData.goals_completed !== undefined) setGoalsCompleted(pulseData.goals_completed);
             setPulseStats({
@@ -149,8 +155,24 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
     }
 
     fetchStatsAndActivity();
+
+    // Auto-refresh when the clock strikes 12:00 AM midnight in the user's country
+    const scheduleMidnightCheck = () => {
+      const now = new Date();
+      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
+      const msUntilMidnight = Math.max(nextMidnight.getTime() - now.getTime(), 1000);
+      midnightTimerId = setTimeout(() => {
+        if (isMounted) {
+          fetchStatsAndActivity();
+          scheduleMidnightCheck();
+        }
+      }, msUntilMidnight);
+    };
+    scheduleMidnightCheck();
+
     return () => {
       isMounted = false;
+      if (midnightTimerId) clearTimeout(midnightTimerId);
     };
   }, [token]);
 
@@ -185,7 +207,7 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
             <div className="streak-text-group">
               <span className="streak-count">{streakDays}-Day Streak</span>
               <span className="streak-sub">
-                {streakDays > 1 ? "Keep the flame alive!" : "Active today!"}
+                {streakActiveToday ? "Active today!" : "Keep the flame alive!"}
               </span>
             </div>
           </div>

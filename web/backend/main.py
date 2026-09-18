@@ -11,6 +11,7 @@ import shutil
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta, date
+from zoneinfo import ZoneInfo
 from bson import ObjectId
 
 from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Depends, BackgroundTasks
@@ -268,87 +269,116 @@ async def update_profile(
 
 
 @app.get("/analytics/study-pulse")
-async def get_study_pulse(current_user_email: str = Depends(get_current_user_email)):
+async def get_study_pulse(
+    tz: Optional[str] = None,
+    current_user_email: str = Depends(get_current_user_email),
+):
     email_clean = current_user_email.strip().lower()
     reviews_col = get_flashcard_reviews_collection()
     quiz_col = get_quiz_results_collection()
     uploads_col = get_uploads_collection()
 
-    now_utc = datetime.now(timezone.utc)
-    today_date = now_utc.date()
+    # Determine user's local country timezone (e.g. "Asia/Karachi", "America/New_York", etc.)
+    user_tz = timezone.utc
+    if tz and tz.strip():
+        try:
+            user_tz = ZoneInfo(tz.strip())
+        except Exception:
+            user_tz = timezone.utc
 
-    # 1. Collect all distinct activity dates
-    activity_dates = {today_date}  # Today is active since user is logged in
+    # Current time and date in the user's country / local timezone
+    # Exactly at midnight (12:00 AM) in their country, today_date advances to the new calendar day
+    now_user = datetime.now(user_tz)
+    today_date = now_user.date()
+    yesterday_date = today_date - timedelta(days=1)
+
+    # Helper to convert DB UTC datetimes / ISO strings to user's local date
+    def to_user_date(val: Any) -> Optional[date]:
+        if isinstance(val, str):
+            try:
+                val = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            except Exception:
+                return None
+        if isinstance(val, datetime):
+            if val.tzinfo is None:
+                val = val.replace(tzinfo=timezone.utc)
+            return val.astimezone(user_tz).date()
+        return None
+
+    # 1. Collect all distinct study activity dates in user's local timezone
+    real_activity_dates: set = set()
 
     # Flashcard reviews dates
     async for r in reviews_col.find({"user_id": email_clean}, {"date_reviewed": 1, "topic": 1, "status": 1}):
-        dt = r.get("date_reviewed")
-        if isinstance(dt, datetime):
-            activity_dates.add(dt.date())
-        elif isinstance(dt, str):
-            try:
-                activity_dates.add(datetime.fromisoformat(dt.replace("Z", "+00:00")).date())
-            except Exception:
-                pass
+        d = to_user_date(r.get("date_reviewed"))
+        if d:
+            real_activity_dates.add(d)
 
     # Quiz results dates
     async for q in quiz_col.find({"user_id": email_clean}, {"timestamp": 1, "created_at": 1, "topic": 1}):
-        dt = q.get("timestamp") or q.get("created_at")
-        if isinstance(dt, datetime):
-            activity_dates.add(dt.date())
-        elif isinstance(dt, str):
-            try:
-                activity_dates.add(datetime.fromisoformat(dt.replace("Z", "+00:00")).date())
-            except Exception:
-                pass
+        d = to_user_date(q.get("timestamp") or q.get("created_at"))
+        if d:
+            real_activity_dates.add(d)
 
     # Uploads dates
     async for u in uploads_col.find({"user_id": email_clean}, {"upload_date": 1, "filename": 1}):
-        dt = u.get("upload_date")
-        if isinstance(dt, datetime):
-            activity_dates.add(dt.date())
-        elif isinstance(dt, str):
-            try:
-                activity_dates.add(datetime.fromisoformat(dt.replace("Z", "+00:00")).date())
-            except Exception:
-                pass
+        d = to_user_date(u.get("upload_date"))
+        if d:
+            real_activity_dates.add(d)
 
-    # 2. Compute Consecutive Day Streak
-    streak_count = 0
-    curr = today_date
-    while curr in activity_dates:
-        streak_count += 1
-        curr = curr - timedelta(days=1)
+    # 2. Compute Consecutive Day Streak with Local Midnight rollover:
+    # If the user has studied TODAY (local timezone):
+    #   Streak includes today and counts backward consecutively.
+    # If the user has NOT studied today yet:
+    #   Check if they studied YESTERDAY (local timezone).
+    #   If yes, the streak is alive from yesterday (prompting them to study today to maintain it).
+    #   If neither today nor yesterday has study activity, streak is 1 for an active session.
+    has_activity_today = today_date in real_activity_dates
+    has_activity_yesterday = yesterday_date in real_activity_dates
 
-    streak_days = max(streak_count, 1)
+    if has_activity_today:
+        streak_count = 0
+        curr = today_date
+        while curr in real_activity_dates:
+            streak_count += 1
+            curr = curr - timedelta(days=1)
+        streak_days = max(streak_count, 1)
+        streak_active_today = True
+    elif has_activity_yesterday:
+        streak_count = 0
+        curr = yesterday_date
+        while curr in real_activity_dates:
+            streak_count += 1
+            curr = curr - timedelta(days=1)
+        streak_days = max(streak_count, 1)
+        streak_active_today = False
+    else:
+        streak_days = 1
+        streak_active_today = False
 
-    # 3. Today's Milestones (Daily Goal)
-    m1_login = True  # Milestone 1: Daily login/active session
-    m2_flashcards = False  # Milestone 2: Studied flashcards today
-    m3_quiz = False  # Milestone 3: Took a quiz today
-    m4_extra = False  # Milestone 4: Uploaded file or completed >= 3 items today
-
-    today_start = datetime.combine(today_date, datetime.min.time(), tzinfo=timezone.utc)
+    # 3. Today's Milestones (Daily Goal) calculated from local midnight in user's timezone
+    local_midnight = datetime.combine(today_date, datetime.min.time(), tzinfo=user_tz)
+    today_start_utc = local_midnight.astimezone(timezone.utc)
 
     today_reviews = await reviews_col.count_documents({
         "user_id": email_clean,
-        "date_reviewed": {"$gte": today_start},
+        "date_reviewed": {"$gte": today_start_utc},
     })
-    if today_reviews > 0:
-        m2_flashcards = True
-        if today_reviews >= 3:
-            m4_extra = True
+    m1_login = True  # Milestone 1: Daily login/active session
+    m2_flashcards = today_reviews > 0
+    m3_quiz = False
+    m4_extra = today_reviews >= 3
 
     today_quizzes = await quiz_col.count_documents({
         "user_id": email_clean,
-        "timestamp": {"$gte": today_start},
+        "timestamp": {"$gte": today_start_utc},
     })
     if today_quizzes > 0:
         m3_quiz = True
 
     today_uploads = await uploads_col.count_documents({
         "user_id": email_clean,
-        "upload_date": {"$gte": today_start},
+        "upload_date": {"$gte": today_start_utc},
     })
     if today_uploads > 0:
         m4_extra = True
@@ -417,6 +447,7 @@ async def get_study_pulse(current_user_email: str = Depends(get_current_user_ema
 
     return {
         "streak_days": streak_days,
+        "streak_active_today": streak_active_today,
         "goal_percent": goal_percent,
         "goals_completed": milestones_done,
         "total_goals": 4,
@@ -424,6 +455,8 @@ async def get_study_pulse(current_user_email: str = Depends(get_current_user_ema
         "in_review": total_in_review,
         "weak_topics": weak_count,
         "last_studied": last_studied_payload,
+        "timezone": str(user_tz),
+        "local_date": today_date.isoformat(),
     }
 
 
