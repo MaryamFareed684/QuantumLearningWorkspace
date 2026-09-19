@@ -27,6 +27,42 @@ export default function FlashcardsView({ initialContext }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Source mode: generate from any topic, or scoped to an uploaded document
+  const [sourceMode, setSourceMode] = useState(initialContext?.document_id ? "document" : "topic");
+  const [docFiles, setDocFiles] = useState([]);
+  const [selectedFileId, setSelectedFileId] = useState(initialContext?.document_id || "");
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/uploads`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) setDocFiles(data);
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const getCleanTopicFromFilename = (filename) => {
+    if (!filename) return "";
+    const withoutExt = filename.replace(/\.[^/.]+$/, "");
+    return withoutExt.replace(/[_-]/g, " ").replace(/\s+/g, " ").trim();
+  };
+
+  const handleSelectDocFile = (fileId) => {
+    setSelectedFileId(fileId);
+    const file = docFiles.find((f) => String(f.id) === String(fileId));
+    if (file) {
+      setTopicInput(getCleanTopicFromFilename(file.filename));
+    }
+  };
+
+  const handleSourceModeChange = (mode) => {
+    setSourceMode(mode);
+    if (mode === "topic") {
+      setSelectedFileId("");
+    }
+  };
+
   // Flashcards Study Deck State
   const [currentTopic, setCurrentTopic] = useState(initialContext?.topic || "");
   const [cards, setCards] = useState(initialContext?.cards || []);
@@ -72,8 +108,9 @@ export default function FlashcardsView({ initialContext }) {
         body: JSON.stringify({
           topic: chosenTopic,
           num_cards: Number(numCards),
-          difficulty,
-        }),
+            difficulty,
+            ...(sourceMode === "document" && selectedFileId ? { document_id: selectedFileId } : {}),
+          }),
       });
 
       if (response.status === 401) {
@@ -292,17 +329,58 @@ export default function FlashcardsView({ initialContext }) {
           </div>
         </div>
 
-        <form onSubmit={handleGenerateFlashcards} className="flashcards-form">
-          <div className="flashcards-input-group">
-            <label className="flashcards-label" htmlFor="flashcard-topic">
-              Study Topic:
-            </label>
-            <div className="flashcards-input-row">
-              <input
-                id="flashcard-topic"
-                type="text"
-                className="flashcards-topic-input"
-                placeholder="e.g. Quantum Computing, Machine Learning, Photosynthesis..."
+        <div className="flashcards-source-tabs">
+            <button
+              type="button"
+              className={`flashcards-source-tab ${sourceMode === "topic" ? "active" : ""}`}
+              onClick={() => handleSourceModeChange("topic")}
+            >
+              Any Topic
+            </button>
+            <button
+              type="button"
+              className={`flashcards-source-tab ${sourceMode === "document" ? "active" : ""}`}
+              onClick={() => handleSourceModeChange("document")}
+            >
+              From a Document
+            </button>
+          </div>
+
+          <form onSubmit={handleGenerateFlashcards} className="flashcards-form">
+            {sourceMode === "document" && (
+              <div className="flashcards-input-group">
+                <label className="flashcards-label" htmlFor="flashcard-doc-select">
+                  Choose Document:
+                </label>
+                <CustomSelect
+                  className="flashcards-custom-select flashcards-doc-select"
+                  value={selectedFileId}
+                  onChange={handleSelectDocFile}
+                  options={
+                    docFiles.length > 0
+                      ? docFiles.map((f) => ({ value: f.id, label: f.filename }))
+                      : [{ value: "", label: "No documents uploaded yet" }]
+                  }
+                  disabled={isGenerating || docFiles.length === 0}
+                  title="Select a document"
+                />
+              </div>
+            )}
+
+            <div className="flashcards-input-group">
+              <label className="flashcards-label" htmlFor="flashcard-topic">
+                {sourceMode === "document" ? "Focus Topic (from selected document):" : "Study Topic:"}
+              </label>
+              <div className="flashcards-input-row">
+                <input
+                  id="flashcard-topic"
+                  type="text"
+                  className="flashcards-topic-input"
+                  placeholder={
+                    sourceMode === "document"
+                      ? "e.g. leave as document title, or narrow to a section..."
+                      : "e.g. Quantum Computing, Machine Learning, Photosynthesis..."
+                  }
                 value={topicInput}
                 onChange={(e) => setTopicInput(e.target.value)}
                 disabled={isGenerating}

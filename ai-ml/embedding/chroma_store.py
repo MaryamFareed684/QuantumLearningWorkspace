@@ -27,7 +27,13 @@ from dotenv import load_dotenv
 
 from embedding.model import get_embedding_model
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
+# [Fix] This file lives at ai-ml/embedding/chroma_store.py — two
+# .parent calls reach ai-ml/, which is where .env actually lives.
+# The previous three .parent calls pointed one level too high (the
+# repo root), where no .env exists at all, so CHROMA_API_KEY /
+# CHROMA_TENANT / CHROMA_DATABASE (and anything else loaded here)
+# were silently never found regardless of what was in ai-ml/.env.
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 
 DEFAULT_COLLECTION_NAME = "study_chunks"
@@ -137,3 +143,28 @@ def delete_chunks(document_id: str) -> None:
     """
     collection = get_collection()
     collection.delete(where={"document_id": document_id})
+
+
+def get_document_chunks(document_id: str, user_id: str = None) -> list:
+    """
+    [Roadmap multi-mode] Returns all chunk texts for a document — a
+    direct metadata lookup, not a similarity search (unlike
+    query_chunks). Used for mode="document" roadmap generation, where
+    the whole document's content is needed, not just the top-k
+    results for some query.
+
+    If user_id is given, only chunks whose stored user_id matches are
+    returned — this prevents a caller from pulling another user's
+    document content by guessing/supplying a document_id that isn't
+    theirs. Returns an empty list if the document doesn't exist, or
+    exists but belongs to a different user (the two cases are
+    intentionally indistinguishable to the caller).
+    """
+    collection = get_collection()
+
+    where = {"document_id": document_id}
+    if user_id is not None:
+        where = {"$and": [{"document_id": document_id}, {"user_id": user_id}]}
+
+    results = collection.get(where=where)
+    return results.get("documents", []) or []
