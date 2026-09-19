@@ -17,13 +17,10 @@ requests
 python-dotenv
 groq
 yake
-<<<<<<< Updated upstream
 pytest
 PyJWT
 docling
 pytesseract 
 Pillow
-=======
 openai-whisper
 yt-dlp
->>>>>>> Stashed changes
