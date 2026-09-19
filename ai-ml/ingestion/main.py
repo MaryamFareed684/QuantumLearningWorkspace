@@ -17,6 +17,13 @@ derived exclusively from the verified token's `sub` claim, so a
 caller can never claim to be another user. This closes the gap
 identified in NV-2: previously these endpoints had no authentication
 at all, unlike quiz_generator's endpoints, which were already correct.
+
+[Task 5] After storing a new document's chunks, the knowledge graph
+is incrementally updated (new document compared only against the
+user's existing documents, not a full rebuild) — so /graph reflects
+new uploads immediately without a manual /graph/rebuild call. Wrapped
+defensively so a graph-update failure never breaks the actual
+ingestion request the user is waiting on.
 """
 from __future__ import annotations
 import shutil
@@ -48,6 +55,20 @@ class URLRequest(BaseModel):
     # the verified JWT, never from client-supplied request data.
 
 
+def _update_knowledge_graph(user_id: str, document_id: str) -> None:
+    """
+    [Task 5] Best-effort incremental graph update. Any failure here
+    (LLM call down, graph module misconfigured, etc.) is swallowed so
+    it never blocks or breaks the ingestion response — the user's
+    upload should succeed even if the graph update doesn't.
+    """
+    try:
+        from knowledge_graph.app.services.graph_service import GraphService
+        GraphService().add_document(user_id, document_id)
+    except Exception:
+        pass
+
+
 def _chunk_and_store(result: dict, user_id: str) -> dict:
     """Shared helper: chunk an ingested document and store it in ChromaDB."""
     document_id = str(uuid.uuid4())
@@ -58,6 +79,9 @@ def _chunk_and_store(result: dict, user_id: str) -> dict:
         document_id=document_id,
         title=result.get("title", ""),
     )
+
+    _update_knowledge_graph(user_id, document_id)
+
     return {
         "document_id": document_id,
         "title": result.get("title", ""),
@@ -72,7 +96,6 @@ def _chunk_and_store(result: dict, user_id: str) -> dict:
 async def ingest_pdf_endpoint(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
-    # user_id="test_user",
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
@@ -100,8 +123,7 @@ async def ingest_pdf_endpoint(
 @app.post("/ingest/youtube")
 async def ingest_youtube_endpoint(
     payload: URLRequest,
-   user_id: str = Depends(get_current_user_id),
-    # user_id = "test_user",
+    user_id: str = Depends(get_current_user_id),
 ):
     try:
         result = ingest_youtube(payload.url)
@@ -111,7 +133,7 @@ async def ingest_youtube_endpoint(
         error_msg = str(e)
         status_code = 400 if "YouTube" in error_msg else 500
         raise HTTPException(status_code=status_code, detail=error_msg)
-        
+
     return {**result, **storage_info}
 
 
