@@ -34,12 +34,16 @@ from web.backend.models import (
 )
 from web.backend.email_service import send_otp_email
 import random
+import secrets
 from web.backend.database import (
     get_users_collection,
     get_uploads_collection,
     get_chat_history_collection,
     get_quiz_results_collection,
+    get_quiz_sessions_collection,
     get_flashcard_reviews_collection,
+    get_flashcards_collection,
+    init_db_indexes,
 )
 from web.backend.auth_utils import (
     hash_password,
@@ -57,6 +61,11 @@ from web.backend.routes.roadmap import router as roadmap_router
 logger = logging.getLogger("uvicorn")
 
 app = FastAPI(title="StudyMind AI Backend")
+
+
+@app.on_event("startup")
+async def on_startup():
+    await init_db_indexes()
 
 origins = [
     "https://quantum-learning-workspace.vercel.app",
@@ -181,7 +190,22 @@ def health_check():
 @app.post("/signup")
 async def signup(request: SignupRequest):
     users = get_users_collection()
+    name_clean = request.name.strip()
+    username_clean = request.username.strip().lower()
     email_clean = request.email.strip().lower()
+
+    # ── Username format validation ───────────────────────────────────────────
+    if not re.match(r"^[a-zA-Z0-9_.-]{3,30}$", username_clean):
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be 3-30 characters and contain only letters, numbers, underscores, dots, or hyphens."
+        )
+
+    # ── Username uniqueness check ─────────────────────────────────────────────
+    existing_username_user = await users.find_one({"username": username_clean})
+    if existing_username_user and existing_username_user.get("email") != email_clean:
+        raise HTTPException(status_code=400, detail="Username is already taken.")
+    # ─────────────────────────────────────────────────────────────────────────
 
     existing_user = await users.find_one({"email": email_clean})
     if existing_user and existing_user.get("is_verified") is not False:
@@ -209,15 +233,17 @@ async def signup(request: SignupRequest):
 
     hashed = hash_password(request.password)
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    otp_code = f"{random.randint(100000, 999999)}"
+    otp_code = f"{secrets.randbelow(900000) + 100000}"
     otp_expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     if existing_user and existing_user.get("is_verified") is False:
-        # User previously registered but didn't finish verification; update credentials & OTP
+        # User previously registered but didn't finish verification; update credentials, name, username & OTP
         await users.update_one(
             {"email": email_clean},
             {
                 "$set": {
+                    "name": name_clean,
+                    "username": username_clean,
                     "hashed_password": hashed,
                     "otp_code": otp_code,
                     "otp_expires_at": otp_expires,
@@ -227,6 +253,8 @@ async def signup(request: SignupRequest):
         )
     else:
         new_user = {
+            "name": name_clean,
+            "username": username_clean,
             "email": email_clean,
             "hashed_password": hashed,
             "created_at": datetime.now(timezone.utc).strftime("%B %d, %Y"),
@@ -504,6 +532,87 @@ async def update_profile(
         "name": saved_name,
         "username": updated_user.get("username") or email_clean.split("@")[0],
     }
+
+
+@app.delete("/delete-account")
+async def delete_account(
+    current_user_email: str = Depends(get_current_user_email),
+):
+    """
+    Permanently delete the currently logged-in user's account and all associated data.
+    STRICT SECURITY: All operations are strictly filtered by current_user_email.
+    Other users' accounts and documents are never touched.
+    """
+    if not current_user_email or not current_user_email.strip():
+        raise HTTPException(status_code=400, detail="Invalid user identification.")
+
+    email_clean = current_user_email.strip().lower()
+
+    users = get_users_collection()
+    user = await users.find_one({"email": email_clean})
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found.")
+
+    uploads = get_uploads_collection()
+    chat_history = get_chat_history_collection()
+    quiz_results = get_quiz_results_collection()
+    quiz_sessions = get_quiz_sessions_collection()
+    flashcard_reviews = get_flashcard_reviews_collection()
+    flashcards = get_flashcards_collection()
+
+    # 1. Clean up only THIS user's uploaded files and vector embeddings
+    try:
+        user_uploads = await uploads.find({"user_id": email_clean}).to_list(length=None)
+        for doc in user_uploads:
+            # Purge vector embeddings for this specific doc
+            document_id = doc.get("vector_document_id") or doc.get("document_id") or str(doc.get("_id"))
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    purge_url = f"{INGESTION_SERVICE_URL.rstrip('/')}/documents/{document_id}"
+                    internal_token = create_access_token(email=email_clean)
+                    await client.delete(
+                        purge_url,
+                        headers={"Authorization": f"Bearer {internal_token}"},
+                        params={"user_id": email_clean},
+                    )
+            except Exception as e:
+                logger.warning(f"Vector purge for doc {document_id} during account deletion failed: {e}")
+
+            # Purge physical disk file if exists
+            possible_filenames = []
+            if doc.get("document_id"):
+                possible_filenames.append(f"{doc['document_id']}.pdf")
+            if doc.get("filename"):
+                possible_filenames.append(doc["filename"])
+
+            for fname in possible_filenames:
+                file_path = os.path.join(UPLOAD_DIRECTORY, fname)
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        logger.warning(f"Could not remove physical file {file_path}: {e}")
+
+        # Delete ONLY this user's uploads records
+        await uploads.delete_many({"user_id": email_clean})
+    except Exception as e:
+        logger.warning(f"Error cleaning uploads for user {email_clean}: {e}")
+
+    # 2. Clean up ONLY THIS user's chat history, quiz results, sessions, and flashcards
+    try:
+        await chat_history.delete_many({"user_id": email_clean})
+        await quiz_results.delete_many({"user_id": email_clean})
+        await quiz_sessions.delete_many({"user_id": email_clean})
+        await flashcard_reviews.delete_many({"user_id": email_clean})
+        await flashcards.delete_many({"user_id": email_clean})
+    except Exception as e:
+        logger.warning(f"Error cleaning activity data for user {email_clean}: {e}")
+
+    # 3. Delete ONLY THIS user's account from users collection
+    del_result = await users.delete_one({"email": email_clean})
+    logger.info(f"User account permanently deleted for {email_clean} (deleted_count={getattr(del_result, 'deleted_count', 1)})")
+
+    return {"message": "Account and all associated data deleted successfully."}
 
 
 @app.get("/analytics/study-pulse")

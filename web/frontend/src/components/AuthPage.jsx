@@ -33,6 +33,8 @@ function GitHubIcon() {
 
 function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
   const [mode, setMode] = useState(initialMode);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -119,21 +121,44 @@ function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
     setCanVerifyFromLogin(false);
     setIsSubmitting(true);
 
-    // Confirm password check (signup only)
-    if (mode === "signup" && password !== confirmPassword) {
-      setIsError(true);
-      setMessage("Passwords do not match.");
-      setIsSubmitting(false);
-      return;
+    // Signup specific validations
+    if (mode === "signup") {
+      if (name.trim().length < 2) {
+        setIsError(true);
+        setMessage("Please enter your full name (at least 2 characters).");
+        setIsSubmitting(false);
+        return;
+      }
+      if (username.trim().length < 3) {
+        setIsError(true);
+        setMessage("Username must be at least 3 characters.");
+        setIsSubmitting(false);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setIsError(true);
+        setMessage("Passwords do not match.");
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     const endpoint = mode === "login" ? "/login" : "/signup";
+    const payload =
+      mode === "login"
+        ? { email, password }
+        : {
+            name: name.trim(),
+            username: username.trim().toLowerCase(),
+            email: email.trim().toLowerCase(),
+            password,
+          };
 
     try {
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -245,11 +270,13 @@ function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = `${API_BASE}/auth/google/login`;
+    const origin = window.location.origin;
+    window.location.href = `${API_BASE}/auth/google/login?redirect_to=${encodeURIComponent(origin)}`;
   };
 
   const handleGithubLogin = () => {
-    window.location.href = `${API_BASE}/auth/github/login`;
+    const origin = window.location.origin;
+    window.location.href = `${API_BASE}/auth/github/login?redirect_to=${encodeURIComponent(origin)}`;
   };
 
   return (
@@ -403,6 +430,32 @@ function AuthPage({ initialMode = "login", onLoginSuccess, onBackToHome }) {
 
               <div className="auth-form-wrapper" key={mode}>
                 <form className="auth-form" onSubmit={handleSubmit}>
+                  {mode === "signup" && (
+                    <>
+                      <label className="auth-label">Full Name</label>
+                      <input
+                        type="text"
+                        className="auth-input"
+                        placeholder="e.g. Ali Ahmed"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                      />
+
+                      <label className="auth-label">Username</label>
+                      <input
+                        type="text"
+                        className="auth-input"
+                        placeholder="e.g. ali_99"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ""))}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        required
+                      />
+                    </>
+                  )}
+
                   <label className="auth-label">Email Address</label>
                   <input
                     type="email"
