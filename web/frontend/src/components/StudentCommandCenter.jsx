@@ -23,16 +23,24 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
     return null;
   });
 
-  // Extract friendly display name from localStorage, email, or default to "Ashar"
+  // Extract friendly display name from user-scoped storage or email
   const getDisplayName = () => {
+    if (!userEmail) return "Student";
+    const userScoped = localStorage.getItem(`studymind_user_name_${userEmail}`);
+    if (userScoped && userScoped.trim()) return userScoped.trim();
+
     const saved = localStorage.getItem("studymind_user_name");
-    if (saved && saved.trim()) return saved.trim();
-    if (!userEmail) return "Ashar";
+    const cachedEmail = localStorage.getItem("studymind_cached_email");
+    if (saved && saved.trim() && cachedEmail === userEmail) return saved.trim();
+
     const raw = userEmail.split("@")[0];
     const clean = raw.replace(/[0-9_.-]/g, " ").trim();
-    if (!clean) return "Ashar";
+    if (!clean) {
+      return raw.charAt(0).toUpperCase() + raw.slice(1);
+    }
     return clean
       .split(" ")
+      .filter(Boolean)
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");
   };
@@ -40,6 +48,7 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
   const [displayName, setDisplayName] = useState(getDisplayName);
 
   useEffect(() => {
+    setDisplayName(getDisplayName());
     const handleProfileUpdate = () => {
       setDisplayName(getDisplayName());
     };
@@ -130,6 +139,22 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
             }
           }
         }
+
+        // Fetch user profile name from backend
+        try {
+          const meRes = await fetch(`${API_BASE}/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (isMounted && meData?.name && meData.name.trim()) {
+              setDisplayName(meData.name.trim());
+              if (userEmail) {
+                localStorage.setItem(`studymind_user_name_${userEmail}`, meData.name.trim());
+              }
+            }
+          }
+        } catch {}
 
         // 2. If no local study activity recorded yet, check backend reviews history
         if (!localStorage.getItem("studymind_last_activity")) {

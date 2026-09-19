@@ -43,9 +43,15 @@ function SidebarNav({ activeTab, setActiveTab, onRequestLogout }) {
 
   const { userEmail } = useAuth();
   const getInitialLetter = () => {
+    if (!userEmail) return "U";
+    const userScoped = localStorage.getItem(`studymind_user_name_${userEmail}`);
+    if (userScoped && userScoped.trim()) return userScoped.trim()[0].toUpperCase();
+
     const saved = localStorage.getItem("studymind_user_name");
-    if (saved && saved.trim()) return saved.trim()[0].toUpperCase();
-    return userEmail ? userEmail[0].toUpperCase() : "U";
+    const cachedEmail = localStorage.getItem("studymind_cached_email");
+    if (saved && saved.trim() && cachedEmail === userEmail) return saved.trim()[0].toUpperCase();
+
+    return userEmail[0].toUpperCase();
   };
   const [initial, setInitial] = useState(getInitialLetter);
 
@@ -132,9 +138,15 @@ function SidebarNav({ activeTab, setActiveTab, onRequestLogout }) {
 function TopBar({ activeTab, onNavigate }) {
   const { userEmail } = useAuth();
   const getInitialName = () => {
+    if (!userEmail) return "Student User";
+    const userScoped = localStorage.getItem(`studymind_user_name_${userEmail}`);
+    if (userScoped && userScoped.trim()) return userScoped.trim();
+
     const saved = localStorage.getItem("studymind_user_name");
-    if (saved && saved.trim()) return saved.trim();
-    return userEmail ? userEmail.split("@")[0] : "Student User";
+    const cachedEmail = localStorage.getItem("studymind_cached_email");
+    if (saved && saved.trim() && cachedEmail === userEmail) return saved.trim();
+
+    return userEmail.split("@")[0];
   };
   const [displayName, setDisplayName] = useState(getInitialName);
 

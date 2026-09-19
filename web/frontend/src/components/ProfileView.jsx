@@ -21,9 +21,10 @@ export default function ProfileView({ onRequestLogout }) {
 
   // Profile Edit States
   const [fullName, setFullName] = useState(
-    localStorage.getItem("studymind_user_name") || (userEmail ? userEmail.split("@")[0] : "Ashar")
+    (userEmail && localStorage.getItem(`studymind_user_name_${userEmail}`)) ||
+    (userEmail ? userEmail.split("@")[0] : "Student User")
   );
-  const [username, setUsername] = useState(userEmail ? userEmail.split("@")[0] : "ashar");
+  const [username, setUsername] = useState(userEmail ? userEmail.split("@")[0] : "student");
   const [profileMsg, setProfileMsg] = useState({ text: "", type: "" });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -101,13 +102,14 @@ export default function ProfileView({ onRequestLogout }) {
             ? meData.question_count
             : getLocalQuestionCount();
 
+        const userScopedName = userEmail ? localStorage.getItem(`studymind_user_name_${userEmail}`) : null;
         const currentName =
           meData?.name ||
-          localStorage.getItem("studymind_user_name") ||
-          (userEmail ? userEmail.split("@")[0] : "Ashar");
+          userScopedName ||
+          (userEmail ? userEmail.split("@")[0] : "Student User");
         const currentUsername =
           meData?.username ||
-          (userEmail ? userEmail.split("@")[0] : "ashar");
+          (userEmail ? userEmail.split("@")[0] : "student");
 
         setProfileData({
           email: meData?.email || userEmail || "user@example.com",
@@ -169,6 +171,10 @@ export default function ProfileView({ onRequestLogout }) {
       setFullName(savedName);
       setUsername(savedUser);
       localStorage.setItem("studymind_user_name", savedName);
+      if (userEmail) {
+        localStorage.setItem(`studymind_user_name_${userEmail}`, savedName);
+        localStorage.setItem("studymind_cached_email", userEmail);
+      }
 
       setProfileMsg({ text: "✓ Display name updated successfully!", type: "success" });
       window.dispatchEvent(new Event("studymind_profile_updated"));

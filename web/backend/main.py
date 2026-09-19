@@ -7,6 +7,7 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 import uuid
+import re
 import shutil
 import logging
 from typing import Optional, Dict, Any, List
@@ -22,6 +23,8 @@ import httpx
 from web.backend.models import (
     SignupRequest,
     LoginRequest,
+    VerifyOtpRequest,
+    ResendOtpRequest,
     Upload,
     ChatMessage,
     ChangePasswordRequest,
@@ -29,6 +32,8 @@ from web.backend.models import (
     QuizResult,
     QuizResultRequest,
 )
+from web.backend.email_service import send_otp_email
+import random
 from web.backend.database import (
     get_users_collection,
     get_uploads_collection,
@@ -179,22 +184,157 @@ async def signup(request: SignupRequest):
     email_clean = request.email.strip().lower()
 
     existing_user = await users.find_one({"email": email_clean})
-    if existing_user:
+    if existing_user and existing_user.get("is_verified") is not False:
         raise HTTPException(status_code=400, detail="Email already registered.")
+
+    # ── Password strength validation ──────────────────────────────────────────
+    pwd = request.password
+    errors = []
+    if len(pwd) < 8:
+        errors.append("at least 8 characters")
+    if not re.search(r"[A-Z]", pwd):
+        errors.append("at least one uppercase letter")
+    if not re.search(r"[a-z]", pwd):
+        errors.append("at least one lowercase letter")
+    if not re.search(r"[0-9]", pwd):
+        errors.append("at least one number")
+    if not re.search(r"[^A-Za-z0-9]", pwd):
+        errors.append("at least one special character (!@#$ etc.)")
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must have: {', '.join(errors)}."
+        )
+    # ─────────────────────────────────────────────────────────────────────────
 
     hashed = hash_password(request.password)
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    otp_code = f"{random.randint(100000, 999999)}"
+    otp_expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-    new_user = {
+    if existing_user and existing_user.get("is_verified") is False:
+        # User previously registered but didn't finish verification; update credentials & OTP
+        await users.update_one(
+            {"email": email_clean},
+            {
+                "$set": {
+                    "hashed_password": hashed,
+                    "otp_code": otp_code,
+                    "otp_expires_at": otp_expires,
+                    "otp_last_sent": datetime.now(timezone.utc),
+                }
+            }
+        )
+    else:
+        new_user = {
+            "email": email_clean,
+            "hashed_password": hashed,
+            "created_at": datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            "login_dates": [today_iso],
+            "last_login": datetime.now(timezone.utc),
+            "is_verified": False,
+            "otp_code": otp_code,
+            "otp_expires_at": otp_expires,
+            "otp_last_sent": datetime.now(timezone.utc),
+        }
+        await users.insert_one(new_user)
+
+    # Send OTP email (and log to console for dev mode)
+    await send_otp_email(email_clean, otp_code)
+
+    return {
+        "message": "Verification code sent to your email.",
         "email": email_clean,
-        "hashed_password": hashed,
-        "created_at": datetime.now(timezone.utc).strftime("%B %d, %Y"),
-        "login_dates": [today_iso],
-        "last_login": datetime.now(timezone.utc),
+        "requires_verification": True,
     }
 
-    await users.insert_one(new_user)
-    return {"message": "User created successfully.", "email": email_clean}
+
+@app.post("/verify-otp")
+async def verify_otp(request: VerifyOtpRequest):
+    users = get_users_collection()
+    email_clean = request.email.strip().lower()
+    otp_clean = request.otp.strip()
+
+    user = await users.find_one({"email": email_clean})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if user.get("is_verified") is True:
+        token = create_access_token(email=email_clean)
+        return {"message": "Email is already verified.", "access_token": token, "token_type": "bearer"}
+
+    stored_otp = str(user.get("otp_code", ""))
+    expires_at = user.get("otp_expires_at")
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    now_utc = datetime.now(timezone.utc)
+    if not stored_otp or stored_otp != otp_clean:
+        raise HTTPException(status_code=400, detail="Invalid verification code.")
+
+    if expires_at and expires_at < now_utc:
+        raise HTTPException(status_code=400, detail="Verification code has expired. Please click Resend Code.")
+
+    await users.update_one(
+        {"email": email_clean},
+        {
+            "$set": {
+                "is_verified": True,
+                "otp_code": None,
+                "otp_expires_at": None,
+            }
+        }
+    )
+
+    token = create_access_token(email=email_clean)
+    return {
+        "message": "Email verified successfully!",
+        "access_token": token,
+        "token_type": "bearer",
+    }
+
+
+@app.post("/resend-otp")
+async def resend_otp(request: ResendOtpRequest):
+    users = get_users_collection()
+    email_clean = request.email.strip().lower()
+
+    user = await users.find_one({"email": email_clean})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if user.get("is_verified") is True:
+        raise HTTPException(status_code=400, detail="This account is already verified.")
+
+    # 60-second cooldown protection
+    last_sent = user.get("otp_last_sent")
+    if last_sent:
+        if last_sent.tzinfo is None:
+            last_sent = last_sent.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last_sent).total_seconds()
+        if elapsed < 60:
+            remaining = int(60 - elapsed)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {remaining}s before requesting another code."
+            )
+
+    new_otp = f"{random.randint(100000, 999999)}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    await users.update_one(
+        {"email": email_clean},
+        {
+            "$set": {
+                "otp_code": new_otp,
+                "otp_expires_at": expires_at,
+                "otp_last_sent": datetime.now(timezone.utc),
+            }
+        }
+    )
+
+    await send_otp_email(email_clean, new_otp)
+    return {"message": "A new verification code has been sent to your email."}
 
 
 @app.post("/login")
@@ -206,17 +346,74 @@ async def login(request: LoginRequest):
     if not user or not user.get("hashed_password"):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
-    if not verify_password(request.password, user["hashed_password"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    # ── Lockout check ─────────────────────────────────────────────────────────
+    lockout_until = user.get("lockout_until")
+    if lockout_until:
+        # Make lockout_until timezone-aware if it's naive
+        if lockout_until.tzinfo is None:
+            lockout_until = lockout_until.replace(tzinfo=timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        if lockout_until > now_utc:
+            remaining = int((lockout_until - now_utc).total_seconds())
+            mins = remaining // 60
+            secs = remaining % 60
+            raise HTTPException(
+                status_code=423,
+                detail=f"Account locked. Try again in {mins}m {secs}s."
+            )
+        else:
+            # Lockout expired — clear it
+            await users.update_one(
+                {"email": email_clean},
+                {"$set": {"failed_attempts": 0, "lockout_until": None}}
+            )
+    # ─────────────────────────────────────────────────────────────────────────
 
+    # ── Wrong password ────────────────────────────────────────────────────────
+    if not verify_password(request.password, user["hashed_password"]):
+        failed = user.get("failed_attempts", 0) + 1
+        MAX_ATTEMPTS = 5
+        if failed >= MAX_ATTEMPTS:
+            lock_time = datetime.now(timezone.utc) + timedelta(minutes=15)
+            await users.update_one(
+                {"email": email_clean},
+                {"$set": {"failed_attempts": failed, "lockout_until": lock_time}}
+            )
+            raise HTTPException(
+                status_code=423,
+                detail="Too many failed attempts. Account locked for 15 minutes."
+            )
+        remaining_attempts = MAX_ATTEMPTS - failed
+        await users.update_one(
+            {"email": email_clean},
+            {"$set": {"failed_attempts": failed}}
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid password. {remaining_attempts} attempt{'s' if remaining_attempts != 1 else ''} remaining."
+        )
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ── Successful login — reset counters ─────────────────────────────────────
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     await users.update_one(
         {"email": email_clean},
         {
             "$addToSet": {"login_dates": today_iso},
-            "$set": {"last_login": datetime.now(timezone.utc)},
+            "$set": {
+                "last_login": datetime.now(timezone.utc),
+                "failed_attempts": 0,
+                "lockout_until": None,
+            },
         }
     )
+    # ── Check Email Verification ──────────────────────────────────────────────
+    if user.get("is_verified") is False:
+        raise HTTPException(
+            status_code=403,
+            detail="Email not verified. Please verify your email to continue."
+        )
+    # ─────────────────────────────────────────────────────────────────────────
 
     token = create_access_token(email=user["email"])
     return {"access_token": token, "token_type": "bearer"}
