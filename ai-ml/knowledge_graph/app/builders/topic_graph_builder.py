@@ -10,6 +10,7 @@ from knowledge_graph.app.utils.similarity import cosine_similarity
 from knowledge_graph.app.utils.topic_labeler import generate_label
 from knowledge_graph.app.models.graph_edge import GraphEdge
 from knowledge_graph.app.builders.document_graph_builder import get_user_documents
+from knowledge_graph.app.utils.relationship_classifier import classify_relationship
 
 
 def build_topic_graph(user_id: str, max_chunks: int = 200) -> list:
@@ -17,13 +18,10 @@ def build_topic_graph(user_id: str, max_chunks: int = 200) -> list:
     Returns a list of GraphEdge.to_dict() for chunk-level relationships.
 
     max_chunks caps how many of the user's chunks are compared, since
-    comparing every pair is O(n^2) — protects against runaway cost for
-    users with very large amounts of content. Chunks beyond the cap
-    are simply not included in this pass.
+    comparing every pair is O(n^2).
     """
     docs = get_user_documents(user_id)
 
-    # flatten into a single list of (chunk_id, vector, text, title)
     chunks = []
     for doc_id, data in docs.items():
         for i, (vector, text) in enumerate(zip(data["vectors"], data["texts"])):
@@ -37,10 +35,21 @@ def build_topic_graph(user_id: str, max_chunks: int = 200) -> list:
     chunks = chunks[:max_chunks]
 
     edges = []
+    seen_pairs = set()  # NEW — prevents duplicate edges, either direction
+
     for a, b in combinations(chunks, 2):
+        if a["chunk_id"] == b["chunk_id"]:  # NEW — explicit self-link guard
+            continue
+
+        pair_key = frozenset((a["chunk_id"], b["chunk_id"]))  # NEW
+        if pair_key in seen_pairs:  # NEW
+            continue
+        seen_pairs.add(pair_key)  # NEW
+
         score = cosine_similarity(a["vector"], b["vector"])
         if score >= SIMILARITY_THRESHOLD_TOPIC:
             edge = GraphEdge(
+                
                 user_id=user_id,
                 source_id=a["chunk_id"],
                 target_id=b["chunk_id"],
@@ -49,6 +58,7 @@ def build_topic_graph(user_id: str, max_chunks: int = 200) -> list:
                 source_title=a["title"],
                 target_title=b["title"],
                 label=generate_label(a["text"], b["text"]),
+                relationship_type=classify_relationship(a["text"], b["text"]),  # NEW
             )
             edges.append(edge.to_dict())
 
