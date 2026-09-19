@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import "./QuizView.css";
 
-export default function QuizView({ initialContext }) {
+export default function QuizView({ initialContext, onLaunchRoadmap }) {
   const { token, handle401 } = useAuth();
   const { showToast } = useToast();
 
@@ -21,6 +21,10 @@ export default function QuizView({ initialContext }) {
   const [userAnswers, setUserAnswers] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  // Post-submission completion state
+  const [quizResult, setQuizResult] = useState(null);
+  const [isRoadmapGenerating, setIsRoadmapGenerating] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
@@ -158,13 +162,12 @@ export default function QuizView({ initialContext }) {
 
       showToast(scoreMsg, "success");
 
-      // Reset form
-      setTopic("");
-      setQuizType("mcq");
-      setQuestionCount(5);
-      setQuizId("");
-      setQuestions([]);
-      setUserAnswers({});
+      setQuizResult({
+        score: gradedData.score,
+        total: gradedData.total,
+        percentage: gradedData.percentage,
+        topic: topic,
+      });
     } catch (err) {
       const errorMsg = err.message || "Failed to submit quiz";
       setSubmitError(errorMsg);
@@ -173,6 +176,83 @@ export default function QuizView({ initialContext }) {
       setIsSubmitting(false);
     }
   };
+
+  // Handle "generate roadmap from this quiz performance"
+  const handleGenerateRoadmapFromQuiz = async () => {
+    setIsRoadmapGenerating(true);
+    try {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/roadmap/generate-from-quiz-performance`, {
+        method: "POST",
+        headers,
+      });
+
+      const data = await res.json();
+
+      if (data && data.success && Array.isArray(data.next_steps) && data.next_steps.length > 0) {
+        if (onLaunchRoadmap) {
+          onLaunchRoadmap({ next_steps: data.next_steps, subject: data.subject });
+        }
+      } else {
+        showToast(data.subject || "No weak topics found yet — take more quizzes first.", "error");
+      }
+    } catch (err) {
+      showToast("Could not generate a roadmap right now. Please try again.", "error");
+    } finally {
+      setIsRoadmapGenerating(false);
+    }
+  };
+
+  const handleTakeAnotherQuiz = () => {
+    setQuizResult(null);
+    setTopic("");
+    setQuizType("mcq");
+    setQuestionCount(5);
+    setQuizId("");
+    setQuestions([]);
+    setUserAnswers({});
+  };
+
+  // Render post-submission completion screen
+  if (quizResult) {
+    return (
+      <div className="quiz-view">
+        <div className="quiz-request-card quiz-completion-card">
+          <CheckCircle2 size={40} className="quiz-completion-icon" />
+          <h2>Quiz Submitted!</h2>
+          <p className="quiz-completion-score">
+            You scored <strong>{quizResult.score}/{quizResult.total}</strong> ({quizResult.percentage}%) on{" "}
+            <strong>{quizResult.topic}</strong>
+          </p>
+          <div className="quiz-completion-actions">
+            <button
+              type="button"
+              className="btn-generate-quiz"
+              onClick={handleGenerateRoadmapFromQuiz}
+              disabled={isRoadmapGenerating}
+            >
+              {isRoadmapGenerating ? (
+                <>
+                  <span className="spinner" style={{ width: "16px", height: "16px", borderWidth: "2px" }}></span>
+                  Generating Roadmap...
+                </>
+              ) : (
+                <>
+                  <Target size={16} style={{ marginRight: "6px" }} />
+                  Get My Study Roadmap
+                </>
+              )}
+            </button>
+            <button type="button" className="btn-secondary-quiz" onClick={handleTakeAnotherQuiz}>
+              Take Another Quiz
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Render quiz request form
   if (questions.length === 0) {

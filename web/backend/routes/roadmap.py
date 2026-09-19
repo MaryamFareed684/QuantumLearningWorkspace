@@ -1,11 +1,11 @@
-import os
+﻿import os
 import logging
 from typing import List, Dict, Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from web.backend.auth_utils import get_current_user_email
 from web.backend import database
-from web.backend.models import RoadmapNextStep, RoadmapNextStepsResponse, GenerateDocRoadmapRequest
+from web.backend.models import RoadmapNextStep, RoadmapNextStepsResponse, GenerateDocRoadmapRequest, GenerateTopicRoadmapRequest
 
 logger = logging.getLogger(__name__)
 
@@ -387,3 +387,188 @@ async def generate_doc_roadmap(
         next_steps=doc_steps,
     )
 
+
+
+@router.post("/roadmap/generate-from-topic", response_model=RoadmapNextStepsResponse)
+async def generate_topic_roadmap(
+    body: GenerateTopicRoadmapRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    """
+    Generates a personalized study roadmap for a free-text topic (no document required).
+    Coordinates with Team Lambda's /generate-roadmap endpoint using mode="topic".
+    """
+    clean_topic = (body.topic or "").strip() or "General Study Topic"
+    step_count = max(3, min(body.step_count or 5, 15))
+
+    user_id = "user"
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from web.backend.auth_utils import decode_access_token
+            payload = decode_access_token(authorization.split(" ")[1])
+            if payload:
+                user_id = payload.get("sub", "user")
+        except Exception:
+            pass
+
+    lambda_url = f"{ROADMAP_SERVICE_URL.rstrip('/')}/generate-roadmap"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                lambda_url,
+                json={
+                    "mode": "topic",
+                    "topic_names": [clean_topic],
+                    "subject": clean_topic,
+                    "step_count": step_count,
+                },
+                headers={
+                    "Authorization": authorization or "",
+                    "Content-Type": "application/json",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_steps = data.get("steps", [])
+                if raw_steps:
+                    steps = []
+                    for idx, s in enumerate(raw_steps):
+                        tab = "flashcards" if idx == 0 else "chat" if idx == 1 else "quiz"
+                        action = "Study Flashcards" if idx == 0 else "Ask AI" if idx == 1 else "Take Quiz"
+                        steps.append(
+                            RoadmapNextStep(
+                                step_number=s.get("step_number", idx + 1),
+                                topic=s.get("topic", clean_topic),
+                                description=s.get("description", ""),
+                                estimated_duration=s.get("estimated_duration", "1-2 days"),
+                                priority="high" if idx == 0 else "medium" if idx == 1 else "recommended",
+                                action_label=action,
+                                target_tab=tab,
+                            )
+                        )
+                    return RoadmapNextStepsResponse(
+                        success=True,
+                        user_id=user_id,
+                        subject=data.get("subject") or f"Roadmap: {clean_topic}",
+                        total_steps=len(steps),
+                        next_steps=steps,
+                    )
+    except Exception as exc:
+        logger.warning("Lambda topic roadmap error (%s), using synthetic fallback", exc)
+
+    fallback_steps = [
+        RoadmapNextStep(
+            step_number=1,
+            topic=f"Foundations of {clean_topic}",
+            description=f"Review fundamental definitions, terminology, and key principles of {clean_topic}.",
+            estimated_duration="1-2 days",
+            priority="high",
+            action_label="Study Flashcards",
+            target_tab="flashcards",
+        ),
+        RoadmapNextStep(
+            step_number=2,
+            topic=f"In-depth Exploration: {clean_topic}",
+            description="Discuss nuanced mechanisms, examples, and complex queries directly with your AI tutor.",
+            estimated_duration="2 days",
+            priority="medium",
+            action_label="Ask AI",
+            target_tab="chat",
+        ),
+        RoadmapNextStep(
+            step_number=3,
+            topic=f"Mastery Check: {clean_topic}",
+            description="Validate your retention and exam readiness with a tailored practice quiz.",
+            estimated_duration="1-2 days",
+            priority="recommended",
+            action_label="Take Quiz",
+            target_tab="quiz",
+        ),
+    ]
+
+    return RoadmapNextStepsResponse(
+        success=True,
+        user_id=user_id,
+        subject=f"Roadmap: {clean_topic}",
+        total_steps=len(fallback_steps),
+        next_steps=fallback_steps,
+    )
+
+
+@router.post("/roadmap/generate-from-quiz-performance", response_model=RoadmapNextStepsResponse)
+async def generate_quiz_performance_roadmap(
+    authorization: Optional[str] = Header(default=None),
+):
+    """
+    Generates a study roadmap prioritized around the authenticated user's weak topics,
+    using mode="quiz_performance" on Team Lambda's /generate-roadmap endpoint.
+    """
+    user_id = "user"
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from web.backend.auth_utils import decode_access_token
+            payload = decode_access_token(authorization.split(" ")[1])
+            if payload:
+                user_id = payload.get("sub", "user")
+        except Exception:
+            pass
+
+    lambda_url = f"{ROADMAP_SERVICE_URL.rstrip('/')}/generate-roadmap"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                lambda_url,
+                json={
+                    "mode": "quiz_performance",
+                    "step_count": 5,
+                },
+                headers={
+                    "Authorization": authorization or "",
+                    "Content-Type": "application/json",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_steps = data.get("steps", [])
+                if raw_steps:
+                    steps = []
+                    for idx, s in enumerate(raw_steps):
+                        tab = "flashcards" if idx == 0 else "chat" if idx == 1 else "quiz"
+                        action = "Review Flashcards" if idx == 0 else "Ask AI" if idx == 1 else "Take Quiz"
+                        steps.append(
+                            RoadmapNextStep(
+                                step_number=s.get("step_number", idx + 1),
+                                topic=s.get("topic", "Weak Topic Review"),
+                                description=s.get("description", ""),
+                                estimated_duration=s.get("estimated_duration", "1-2 days"),
+                                priority="high" if idx == 0 else "medium" if idx == 1 else "recommended",
+                                action_label=action,
+                                target_tab=tab,
+                            )
+                        )
+                    return RoadmapNextStepsResponse(
+                        success=True,
+                        user_id=user_id,
+                        subject=data.get("subject") or "Roadmap Based on Your Quiz Performance",
+                        total_steps=len(steps),
+                        next_steps=steps,
+                    )
+            elif resp.status_code == 400:
+                # No weak topics found yet (e.g. user hasn't taken a quiz)
+                return RoadmapNextStepsResponse(
+                    success=False,
+                    user_id=user_id,
+                    subject="No weak topics found yet",
+                    total_steps=0,
+                    next_steps=[],
+                )
+    except Exception as exc:
+        logger.warning("Lambda quiz-performance roadmap error (%s)", exc)
+
+    return RoadmapNextStepsResponse(
+        success=False,
+        user_id=user_id,
+        subject="Roadmap unavailable",
+        total_steps=0,
+        next_steps=[],
+    )
