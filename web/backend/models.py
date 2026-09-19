@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 from typing import Literal, Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field, EmailStr
@@ -144,6 +144,10 @@ class GenerateDocRoadmapRequest(BaseModel):
     document_id: Optional[str] = Field(default=None, description="Document ID to scope roadmap to")
     filename: Optional[str] = Field(default=None, description="Filename of the document")
     topic: Optional[str] = Field(default=None, description="Extracted clean topic name")
+
+class GenerateTopicRoadmapRequest(BaseModel):
+    topic: str = Field(..., description="Free-text topic to build a study roadmap for")
+    step_count: Optional[int] = Field(default=5, description="Number of roadmap steps to generate")
 
 
 class GenerateFlashcardsResponse(BaseModel):

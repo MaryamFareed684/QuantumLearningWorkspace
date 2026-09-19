@@ -294,3 +294,85 @@
   .roadmap-page-header   { flex-direction: column; }
   .roadmap-subject-badge { align-self: flex-start; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Custom Topic Roadmap Generator
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.roadmap-topic-form {
+  background: var(--color-card-bg, #151329);
+  border: 1px solid var(--color-card-border);
+  border-radius: var(--radius-xl, 1rem);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.roadmap-topic-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.6rem;
+}
+
+.roadmap-topic-input-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.roadmap-topic-input {
+  flex: 1;
+  padding: 0.65rem 0.9rem;
+  background: var(--color-input-bg, #121024);
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-md, 0.5rem);
+  color: var(--color-text-primary);
+  font-size: 0.88rem;
+  font-family: var(--font-body);
+}
+
+.roadmap-topic-input:focus {
+  outline: none;
+  border-color: var(--color-primary-purple);
+}
+
+.roadmap-topic-generate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 1.3rem;
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--gradient-primary, linear-gradient(135deg, #7c3aed, #2563eb));
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.roadmap-topic-generate-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.roadmap-topic-generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.roadmap-topic-error {
+  display: flex;
+  align-items: center;
+  margin-top: 0.7rem;
+  font-size: 0.82rem;
+  color: var(--color-error, #ef4444);
+}
+
+@media (max-width: 600px) {
+  .roadmap-topic-input-row {
+    flex-direction: column;
+  }
+}
