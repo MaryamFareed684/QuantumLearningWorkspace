@@ -9,6 +9,8 @@ def utc_now() -> datetime:
 
 
 class User(BaseModel):
+    name: Optional[str] = None
+    username: Optional[str] = None
     email: EmailStr
     hashed_password: Optional[str] = None
     auth_provider: Optional[str] = None
@@ -17,6 +19,8 @@ class User(BaseModel):
 
 
 class SignupRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=50)
+    username: str = Field(..., min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_.-]+$")
     email: EmailStr
     password: str = Field(..., min_length=6)
 

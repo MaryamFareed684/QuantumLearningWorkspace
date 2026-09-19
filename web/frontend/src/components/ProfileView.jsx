@@ -1,13 +1,19 @@
 import { useState, useEffect } from "react";
 import { CheckCircle2, Circle, FileText, MessageSquare, Zap, User, Lock, Palette, AlertTriangle, UserCog } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useToast } from "../context/ToastContext.jsx";
 import LogoutModal from "./LogoutModal.jsx";
+import DeleteAccountModal from "./DeleteAccountModal.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import "./ProfileView.css";
 
 export default function ProfileView({ onRequestLogout }) {
   const { token, userEmail, logout, handle401 } = useAuth();
+  const { showToast } = useToast() || {};
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const [profileData, setProfileData] = useState({
     email: userEmail || "user@example.com",
@@ -282,6 +288,61 @@ export default function ProfileView({ onRequestLogout }) {
       setFormMsg({ text: err.message || "Network error while changing password.", type: "error" });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!token) return;
+    setIsDeletingAccount(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`${API_BASE}/delete-account`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (handle401(response)) return;
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDeleteError(data.detail || "Failed to delete account. Please try again.");
+        return;
+      }
+
+      setShowDeleteModal(false);
+
+      // Clean up all local storage artifacts for this user
+      try {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("studymind_user_name");
+        localStorage.removeItem("studymind_cached_email");
+        localStorage.removeItem("studymind_last_activity");
+        localStorage.removeItem("studymind_chat_history");
+        if (userEmail) {
+          localStorage.removeItem(`studymind_user_name_${userEmail}`);
+          localStorage.removeItem(`studymind_chat_history_${userEmail}`);
+        }
+      } catch (e) {
+        // ignore storage errors
+      }
+
+      if (showToast) {
+        showToast("Your account has been deleted permanently.", "info");
+      }
+
+      if (onRequestLogout) {
+        onRequestLogout();
+      } else {
+        logout();
+      }
+    } catch (err) {
+      console.error("Delete account error:", err);
+      setDeleteError(err.message || "Network error while deleting account.");
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -561,7 +622,10 @@ export default function ProfileView({ onRequestLogout }) {
           <p>Irreversible actions. Please be careful.</p>
           <button
             className="btn-delete-account"
-            onClick={() => alert("Are you sure? This will delete your account and all data.")}
+            onClick={() => {
+              setDeleteError("");
+              setShowDeleteModal(true);
+            }}
             type="button"
           >
             Delete Account
@@ -576,6 +640,19 @@ export default function ProfileView({ onRequestLogout }) {
           setShowLogoutModal(false);
           logout();
         }}
+      />
+
+      <DeleteAccountModal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          if (!isDeletingAccount) {
+            setShowDeleteModal(false);
+            setDeleteError("");
+          }
+        }}
+        onConfirm={handleDeleteAccount}
+        isDeleting={isDeletingAccount}
+        errorMessage={deleteError}
       />
     </div>
   );
