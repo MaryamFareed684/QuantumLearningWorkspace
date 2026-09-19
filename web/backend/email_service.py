@@ -72,13 +72,6 @@ def _send_smtp_sync(to_email: str, otp_code: str, host: str, port: int, user: st
 
 
 async def send_otp_email(to_email: str, otp_code: str) -> bool:
-    print("\n" + "=" * 55, flush=True)
-    print("[StudyMind AI OTP Verification]", flush=True)
-    print(f"   Recipient: {to_email}", flush=True)
-    print(f"   Code:      >>> {otp_code} <<< (Valid for 10 minutes)", flush=True)
-    print("=" * 55 + "\n", flush=True)
-    logger.info(f"[EMAIL OTP] Code for {to_email} is {otp_code}")
-
     load_dotenv(_env_path, override=True)
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port = int(os.getenv("SMTP_PORT", "587"))
@@ -86,7 +79,19 @@ async def send_otp_email(to_email: str, otp_code: str) -> bool:
     password = os.getenv("SMTP_PASSWORD", "").strip()
 
     if not user or not password:
-        logger.info("SMTP_USER or SMTP_PASSWORD not set; OTP logged to console only.")
+        # Local development mode without SMTP credentials:
+        # Print OTP to console so developers can test locally without real email.
+        print("\n" + "=" * 55, flush=True)
+        print("[StudyMind AI OTP Verification - DEV MODE (No SMTP)]", flush=True)
+        print(f"   Recipient: {to_email}", flush=True)
+        print(f"   Code:      >>> {otp_code} <<< (Valid for 10 minutes)", flush=True)
+        print("=" * 55 + "\n", flush=True)
+        logger.info(f"[EMAIL OTP DEV] Code for {to_email} is {otp_code}")
         return True
 
+    # Real SMTP is active: Never leak the plaintext OTP code into server logs!
+    logger.info(f"[EMAIL OTP] Verification email dispatched to {to_email}")
+    print(f"[EMAIL OTP] Verification email successfully sent to {to_email}", flush=True)
+
     return await asyncio.to_thread(_send_smtp_sync, to_email, otp_code, host, port, user, password)
+
