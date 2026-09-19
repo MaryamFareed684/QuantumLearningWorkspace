@@ -334,3 +334,112 @@ Requires `Authorization: Bearer <jwt>` (same scheme as `/ask`). `user_id` comes 
 |--------|------|
 | `400` | Invalid `quiz_type`, or no relevant content found for `topic` (returned as `success: false` in body) |
 | `502` | Upstream generation error (e.g. LLM returned malformed data) |
+
+
+## Knowledge Graph (Team Lambda)
+
+**Service root:** `ai-ml/knowledge_graph/`
+
+**Default local base URL:** `http://127.0.0.1:8005`
+
+**Run:**
+
+```bash
+cd ai-ml
+uvicorn knowledge_graph.app.api.graph_routes:app --reload --port 8005
+```
+
+Interactive docs: [http://127.0.0.1:8005/docs](http://127.0.0.1:8005/docs)
+
+**Pipeline:** groups a user's embedded chunks by document → averages each document's vectors → compares every pair (cosine similarity) → creates an edge above threshold → labels it via shared-keyword extraction, with a `relationship_type` field reserved for future LLM-based semantic classification (currently defaults to `"related_to"` for all edges pending that work).
+
+#### Authentication
+
+Requires header: `Authorization: Bearer <jwt>`, same scheme as Quiz Generation and Chatbot — verified against `JWT_SECRET_KEY` (HS256), identity read from the token's `sub` claim.
+
+---
+
+### `GET /health`
+
+**Response `200`:**
+```json
+{"status": "ok"}
+```
+
+---
+
+### `GET /graph`
+
+Returns the authenticated user's current knowledge graph — all embedded documents as nodes, all above-threshold relationships as edges. Does not rebuild the graph; call `/graph/rebuild` first if new content has been added since the last build.
+
+#### Response `200`
+
+```json
+{
+  "nodes": [
+    {"id": "6561c06b-...", "title": "decision_trees", "node_type": "document"},
+    {"id": "82c4705e-...", "title": "machine_learning_intro", "node_type": "document"}
+  ],
+  "edges": [
+    {
+      "user_id": "test_user",
+      "source_id": "6561c06b-...",
+      "target_id": "82c4705e-...",
+      "node_type": "document",
+      "similarity": 0.6528,
+      "source_title": "decision_trees",
+      "target_title": "machine_learning_intro",
+      "label": "shared terms: algorithms, learning, machine",
+      "relationship_type": "related_to"
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `nodes[].id` | string | Document ID |
+| `nodes[].title` | string | Document title |
+| `nodes[].node_type` | string | Currently always `"document"` |
+| `edges[].node_type` | string | `"document"` or `"topic"` — which graph layer this edge belongs to |
+| `edges[].similarity` | float | Cosine similarity score, 0–1 |
+| `edges[].label` | string | Shared-keyword explanation of the connection |
+| `edges[].relationship_type` | string | Currently always `"related_to"` — reserved for future LLM-based classification (e.g. `"prerequisite_of"`, `"example_of"`) |
+
+---
+
+### `POST /graph/rebuild`
+
+Rebuilds the authenticated user's graph from their current embedded content — deletes existing edges and recreates them fresh.
+
+#### Response `200`
+
+```json
+{
+  "user_id": "test_user",
+  "document_edges_created": 1,
+  "topic_edges_created": 1
+}
+```
+
+---
+
+### `DELETE /graph`
+
+Deletes all graph edges for the authenticated user.
+
+#### Response `200`
+
+```json
+{"user_id": "test_user", "deleted": true}
+```
+
+---
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `403` | Missing `Authorization` header |
+| `401` | Token present but invalid/expired |
+| `500` | Server missing `JWT_SECRET_KEY` |
