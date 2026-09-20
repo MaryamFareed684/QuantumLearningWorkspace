@@ -1760,7 +1760,7 @@ export default function Dashboard() {
           )}
           {activeTab === "flashcards" && <FlashcardsView initialContext={flashcardsContext} />}
           {activeTab === "quiz" && <QuizView initialContext={quizContext} onLaunchRoadmap={handleLaunchRoadmap} />}
-          {activeTab === "results" && <QuizResultsView />}
+          {activeTab === "results" && <QuizResultsView onLaunchRoadmap={handleLaunchRoadmap} />}
           {activeTab === "roadmap" && (
             <StudyRoadmapView onNavigate={setActiveTab} initialContext={roadmapContext} />
           )}
