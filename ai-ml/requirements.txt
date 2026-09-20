@@ -22,3 +22,5 @@ PyJWT
 docling
 pytesseract 
 Pillow
+openai-whisper
+yt-dlp

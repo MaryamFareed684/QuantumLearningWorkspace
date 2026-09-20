@@ -13,6 +13,7 @@ from knowledge_graph.app.utils.similarity import cosine_similarity
 from knowledge_graph.app.utils.topic_labeler import generate_label
 from knowledge_graph.app.validators.graph_validators import validate_documents_have_vectors
 from knowledge_graph.app.models.graph_edge import GraphEdge
+from knowledge_graph.app.utils.relationship_classifier import classify_relationship
 
 
 def get_user_documents(user_id: str) -> dict:
@@ -47,10 +48,6 @@ def get_user_documents(user_id: str) -> dict:
 
 
 def build_document_graph(user_id: str) -> list:
-    """
-    Returns a list of GraphEdge.to_dict() for this user's
-    document-to-document relationships.
-    """
     docs = validate_documents_have_vectors(get_user_documents(user_id))
 
     doc_vectors = {
@@ -59,14 +56,24 @@ def build_document_graph(user_id: str) -> list:
     }
 
     edges = []
+    seen_pairs = set()  # NEW — prevents duplicate edges, either direction
+
     for (id_a, vec_a), (id_b, vec_b) in combinations(doc_vectors.items(), 2):
+        if id_a == id_b:  # NEW — explicit self-link guard, defensive
+            continue
+
+        pair_key = frozenset((id_a, id_b))  # NEW — order-independent identity
+        if pair_key in seen_pairs:  # NEW
+            continue
+        seen_pairs.add(pair_key)  # NEW
+
         score = cosine_similarity(vec_a, vec_b)
         if score >= SIMILARITY_THRESHOLD_DOCUMENT:
-            # label from a sample of each document's text, not the full text
             sample_a = " ".join(docs[id_a]["texts"][:2])
             sample_b = " ".join(docs[id_b]["texts"][:2])
 
             edge = GraphEdge(
+                
                 user_id=user_id,
                 source_id=id_a,
                 target_id=id_b,
@@ -75,6 +82,7 @@ def build_document_graph(user_id: str) -> list:
                 source_title=docs[id_a]["title"],
                 target_title=docs[id_b]["title"],
                 label=generate_label(sample_a, sample_b),
+                relationship_type=classify_relationship(sample_a, sample_b),  # NEW
             )
             edges.append(edge.to_dict())
 

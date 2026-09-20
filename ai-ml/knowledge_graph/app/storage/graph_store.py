@@ -8,8 +8,7 @@ alongside the "one shared data location" the rest of the project
 already uses.
 
 Not safe for many concurrent writers, but fine for how this module
-is used today: rebuilt on-demand per user, not written to under
-sustained concurrent load.
+is used today.
 """
 import json
 import os
@@ -43,15 +42,14 @@ def _write_all(edges: list) -> None:
 
 def save_edges(user_id: str, edges: list, node_type: str) -> int:
     """
-    Replaces all existing edges of the given node_type for this user
-    with the new set (a full rebuild, not an incremental append —
-    keeps the graph consistent with the latest embedded content).
-    edges: list of GraphEdge.to_dict() results.
-    Returns the number of edges written.
+    Full-replace: removes ALL existing edges of the given node_type
+    for this user, then writes the new set. Used by build_graph()'s
+    full rebuild — NOT safe to use for incremental updates, since it
+    would delete edges you meant to keep. Use append_edges() instead
+    when adding to an existing graph rather than rebuilding it.
     """
     with _lock:
         all_edges = _read_all()
-        # drop this user's existing edges of this type, keep everyone else's
         all_edges = [
             e for e in all_edges
             if not (e["user_id"] == user_id and e["node_type"] == node_type)
@@ -59,6 +57,21 @@ def save_edges(user_id: str, edges: list, node_type: str) -> int:
         all_edges.extend(edges)
         _write_all(all_edges)
     return len(edges)
+
+
+def append_edges(user_id: str, new_edges: list, node_type: str) -> int:
+    """
+    [Task 5] Adds edges without deleting any existing ones — for
+    incremental updates when a single new document is added, rather
+    than a full graph rebuild. Use save_edges() instead when you
+    genuinely want to replace the full edge set (e.g. manual
+    /graph/rebuild).
+    """
+    with _lock:
+        all_edges = _read_all()
+        all_edges.extend(new_edges)
+        _write_all(all_edges)
+    return len(new_edges)
 
 
 def get_edges(user_id: str, node_type: str = None) -> list:

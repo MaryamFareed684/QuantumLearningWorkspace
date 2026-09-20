@@ -43,6 +43,12 @@ class Embedder:
         this method. This method exists for standalone/manual use
         (see the CLI at the bottom of this file) and now writes to the
         exact same store, so both paths stay consistent.
+
+        [Task 5, pending] Auto-updating the knowledge graph on upload
+        needs to be hooked in here AND in ingestion/main.py's
+        _chunk_and_store() (the actual path real uploads use) —
+        intentionally not added yet, since the ingestion-side change
+        is being held off for review before touching shared code.
         """
         chunks = chunk_document(document)
         if not chunks:
@@ -55,6 +61,7 @@ class Embedder:
             document_id=document_id,
             title=document.get("title", ""),
         )
+
         return {"document_id": document_id, "chunks_stored": stored_count}
 
     def search(
@@ -99,9 +106,7 @@ INGESTION_BASE_URL = "http://127.0.0.1:8001"
 # NOTE: this was previously "http://127.0.0.1:8000", which is Mu's
 # confirmed port, not Lambda ingestion's. Per the confirmed port
 # scheme (Mu=8000, Pluto=5000, Lambda ingestion=8001, Lambda
-# quiz=8002), 8001 is correct here. Flagging in case this was
-# intentional for some other reason — worth a quick sanity check
-# against P1-6's verification pass.
+# quiz=8002), 8001 is correct here.
 
 
 def _fetch_from_ingestion(pdf=None, youtube=None, article=None) -> dict:
