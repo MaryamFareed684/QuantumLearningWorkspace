@@ -10,7 +10,7 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
     inReview: 0,
     weakTopics: 0,
   });
-  const [streakDays, setStreakDays] = useState(1);
+  const [streakDays, setStreakDays] = useState(0);
   const [streakActiveToday, setStreakActiveToday] = useState(false);
   const [goalPercent, setGoalPercent] = useState(25);
   const [goalsCompleted, setGoalsCompleted] = useState(1);
@@ -227,12 +227,15 @@ export default function StudentCommandCenter({ onNavigate, files = [] }) {
 
         <div className="command-metrics-cluster">
           {/* Streak Counter */}
-          <div className="streak-badge-card" title={`${streakDays} consecutive day${streakDays > 1 ? "s" : ""} of active study`}>
+          <div
+            className="streak-badge-card"
+            title={streakDays > 0 ? `${streakDays} consecutive day${streakDays !== 1 ? "s" : ""} of active study` : "Start studying today to build your streak!"}
+          >
             <Flame className="streak-flame-icon" size={20} />
             <div className="streak-text-group">
               <span className="streak-count">{streakDays}-Day Streak</span>
               <span className="streak-sub">
-                {streakActiveToday ? "Active today!" : "Keep the flame alive!"}
+                {streakActiveToday ? "Active today!" : streakDays > 0 ? "Keep the flame alive!" : "Start your streak!"}
               </span>
             </div>
           </div>

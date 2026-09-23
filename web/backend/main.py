@@ -628,6 +628,63 @@ async def delete_account(
     return {"message": "Account and all associated data deleted successfully."}
 
 
+def to_user_date(val: Any, user_tz: Any) -> Optional[date]:
+    """Convert a datetime/date or ISO string to the user's local calendar date."""
+    if not val:
+        return None
+    if isinstance(val, date) and not isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        val_clean = val.strip()
+        # Direct YYYY-MM-DD date string without time
+        if len(val_clean) == 10 and val_clean.count("-") == 2:
+            try:
+                return date.fromisoformat(val_clean)
+            except Exception:
+                pass
+        try:
+            val = datetime.fromisoformat(val_clean.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            val = val.replace(tzinfo=timezone.utc)
+        return val.astimezone(user_tz).date()
+    return None
+
+
+def compute_consecutive_streak(activity_dates: set, today_date: date) -> tuple[int, bool]:
+    """
+    Computes consecutive calendar days of activity in user's timezone.
+    - If user has studied TODAY: streak counts today + consecutive previous days backwards.
+      (streak_days >= 1, streak_active_today = True)
+    - If user has NOT studied today yet, but studied YESTERDAY:
+      streak is preserved from yesterday (prompting user to study today to keep it).
+      (streak_days >= 1, streak_active_today = False)
+    - If a day was missed (neither today nor yesterday was active):
+      streak is broken and returns 0 (streak_days = 0, streak_active_today = False).
+      As soon as the user performs study activity today, it resets to 1.
+    """
+    if today_date in activity_dates:
+        count = 0
+        curr = today_date
+        while curr in activity_dates:
+            count += 1
+            curr = curr - timedelta(days=1)
+        return max(count, 1), True
+
+    yesterday_date = today_date - timedelta(days=1)
+    if yesterday_date in activity_dates:
+        count = 0
+        curr = yesterday_date
+        while curr in activity_dates:
+            count += 1
+            curr = curr - timedelta(days=1)
+        return max(count, 1), False
+
+    return 0, False
+
+
 @app.get("/analytics/study-pulse")
 async def get_study_pulse(
     tz: Optional[str] = None,
@@ -650,71 +707,40 @@ async def get_study_pulse(
     # Exactly at midnight (12:00 AM) in their country, today_date advances to the new calendar day
     now_user = datetime.now(user_tz)
     today_date = now_user.date()
-    yesterday_date = today_date - timedelta(days=1)
-
-    # Helper to convert DB UTC datetimes / ISO strings to user's local date
-    def to_user_date(val: Any) -> Optional[date]:
-        if isinstance(val, str):
-            try:
-                val = datetime.fromisoformat(val.replace("Z", "+00:00"))
-            except Exception:
-                return None
-        if isinstance(val, datetime):
-            if val.tzinfo is None:
-                val = val.replace(tzinfo=timezone.utc)
-            return val.astimezone(user_tz).date()
-        return None
 
     # 1. Collect all distinct study activity dates in user's local timezone
     real_activity_dates: set = set()
 
     # Flashcard reviews dates
     async for r in reviews_col.find({"user_id": email_clean}, {"date_reviewed": 1, "topic": 1, "status": 1}):
-        d = to_user_date(r.get("date_reviewed"))
+        d = to_user_date(r.get("date_reviewed"), user_tz)
         if d:
             real_activity_dates.add(d)
 
-    # Quiz results dates
-    async for q in quiz_col.find({"user_id": email_clean}, {"timestamp": 1, "created_at": 1, "topic": 1}):
-        d = to_user_date(q.get("timestamp") or q.get("created_at"))
+    # Quiz results dates (support date_taken, timestamp, created_at)
+    async for q in quiz_col.find(
+        {"user_id": email_clean},
+        {"date_taken": 1, "timestamp": 1, "created_at": 1, "topic": 1}
+    ):
+        d = to_user_date(q.get("date_taken") or q.get("timestamp") or q.get("created_at"), user_tz)
         if d:
             real_activity_dates.add(d)
 
     # Uploads dates
     async for u in uploads_col.find({"user_id": email_clean}, {"upload_date": 1, "filename": 1}):
-        d = to_user_date(u.get("upload_date"))
+        d = to_user_date(u.get("upload_date"), user_tz)
+        if d:
+            real_activity_dates.add(d)
+
+    # Chat history / Q&A study interactions
+    chat_col = get_chat_history_collection()
+    async for c in chat_col.find({"user_id": email_clean, "role": "user"}, {"timestamp": 1}):
+        d = to_user_date(c.get("timestamp"), user_tz)
         if d:
             real_activity_dates.add(d)
 
     # 2. Compute Consecutive Day Streak with Local Midnight rollover:
-    # If the user has studied TODAY (local timezone):
-    #   Streak includes today and counts backward consecutively.
-    # If the user has NOT studied today yet:
-    #   Check if they studied YESTERDAY (local timezone).
-    #   If yes, the streak is alive from yesterday (prompting them to study today to maintain it).
-    #   If neither today nor yesterday has study activity, streak is 1 for an active session.
-    has_activity_today = today_date in real_activity_dates
-    has_activity_yesterday = yesterday_date in real_activity_dates
-
-    if has_activity_today:
-        streak_count = 0
-        curr = today_date
-        while curr in real_activity_dates:
-            streak_count += 1
-            curr = curr - timedelta(days=1)
-        streak_days = max(streak_count, 1)
-        streak_active_today = True
-    elif has_activity_yesterday:
-        streak_count = 0
-        curr = yesterday_date
-        while curr in real_activity_dates:
-            streak_count += 1
-            curr = curr - timedelta(days=1)
-        streak_days = max(streak_count, 1)
-        streak_active_today = False
-    else:
-        streak_days = 1
-        streak_active_today = False
+    streak_days, streak_active_today = compute_consecutive_streak(real_activity_dates, today_date)
 
     # 3. Today's Milestones (Daily Goal) calculated from local midnight in user's timezone
     local_midnight = datetime.combine(today_date, datetime.min.time(), tzinfo=user_tz)
@@ -731,7 +757,11 @@ async def get_study_pulse(
 
     today_quizzes = await quiz_col.count_documents({
         "user_id": email_clean,
-        "timestamp": {"$gte": today_start_utc},
+        "$or": [
+            {"date_taken": {"$gte": today_start_utc}},
+            {"timestamp": {"$gte": today_start_utc}},
+            {"created_at": {"$gte": today_start_utc}},
+        ]
     })
     if today_quizzes > 0:
         m3_quiz = True
