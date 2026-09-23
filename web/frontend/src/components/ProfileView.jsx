@@ -1,3 +1,4 @@
+import { isMeaningfulQuestion } from "./questionFilter.js";
 import { useState, useEffect } from "react";
 import { CheckCircle2, Circle, FileText, MessageSquare, Zap, User, Lock, Palette, AlertTriangle, UserCog } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -69,7 +70,7 @@ export default function ProfileView({ onRequestLogout }) {
         if (saved) {
           const msgs = JSON.parse(saved);
           if (Array.isArray(msgs)) {
-            count += msgs.filter((m) => m && m.role === "user").length;
+            count += msgs.filter((m) => m && m.role === "user" && isMeaningfulQuestion(m.content)).length;
           }
         }
       }
@@ -104,7 +105,7 @@ export default function ProfileView({ onRequestLogout }) {
           ? uploadsData.length
           : meData?.document_count || 0;
         const liveQuestions =
-          meData?.question_count && meData.question_count > 0
+          typeof meData?.question_count === "number"
             ? meData.question_count
             : getLocalQuestionCount();
 

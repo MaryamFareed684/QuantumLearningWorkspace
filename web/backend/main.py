@@ -33,6 +33,7 @@ from web.backend.models import (
     QuizResultRequest,
 )
 from web.backend.email_service import send_otp_email
+from web.backend.question_counter import count_meaningful_questions
 import random
 import secrets
 from web.backend.database import (
@@ -499,6 +500,10 @@ async def get_my_profile(
         "created_at": str(created_at),
         "document_count": upload_count,
         "days_active": days_active,
+        # Meaningful questions from saved chat history (greetings / casual messages excluded).
+        "question_count": await count_meaningful_questions(
+            get_chat_history_collection(), email_clean
+        ),
     }
 
 
