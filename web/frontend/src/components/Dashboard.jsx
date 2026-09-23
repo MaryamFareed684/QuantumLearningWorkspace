@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
-import { FileText, MessageSquare, Layers, Target, BarChart3, Map, Network, Brain, RefreshCw, BookOpen, X, AlertTriangle, Globe, Clock, CheckCircle2, Search, Send, ChevronDown, RotateCcw, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { FileText, MessageSquare, Layers, Target, BarChart3, Map, Network, Brain, RefreshCw, BookOpen, X, AlertTriangle, Globe, Clock, CheckCircle2, Search, Send, ChevronDown, RotateCcw, ChevronsLeft, ChevronsRight, Trash2 } from "lucide-react";
 import ProfileView from "./ProfileView.jsx";
 import QuizView from "./QuizView.jsx";
 import QuizResultsView from "./QuizResultsView.jsx";
@@ -880,7 +880,7 @@ function DocumentsView({
                     <div className="doc-actions-cluster">
                       <button
                         className={`btn-doc-action btn-action-ask ${isProcessing ? "disabled" : ""}`}
-                        onClick={() => !isProcessing && onAskAboutDocument(file.filename)}
+                        onClick={() => !isProcessing && onAskAboutDocument(file)}
                         disabled={isProcessing || !!currentLoading}
                         title={isProcessing ? "File is processing" : `Ask questions about ${file.filename}`}
                       >
@@ -1278,6 +1278,17 @@ function FormattedChatMessage({ content }) {
 
 // ─── Custom Scope Dropdown (Scrollable 3-4 visible items) ───────────────────
 
+export function getDocDetails(target) {
+  if (!target) return { filename: null, document_id: null };
+  if (typeof target === "object") {
+    return {
+      filename: target.filename || null,
+      document_id: target.document_id || target.id || null,
+    };
+  }
+  return { filename: String(target), document_id: null };
+}
+
 function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -1292,7 +1303,8 @@ function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedLabel = targetDocument || "All Documents";
+  const targetDetails = getDocDetails(targetDocument);
+  const selectedLabel = targetDetails.filename || "All Documents";
 
   return (
     <div className="custom-scope-dropdown" ref={dropdownRef}>
@@ -1319,7 +1331,11 @@ function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
           </div>
           {files.map((file) => {
             const isProcessing = (file.status || "").toLowerCase() === "processing";
-            const isSelected = targetDocument === file.filename;
+            const fileDocId = file.document_id || file.id;
+            const isSelected =
+              (targetDetails.document_id && fileDocId === targetDetails.document_id) ||
+              (!targetDetails.document_id && targetDetails.filename && file.filename === targetDetails.filename);
+
             return (
               <div
                 key={file.id}
@@ -1328,7 +1344,10 @@ function ScopeDropdown({ targetDocument, setTargetDocument, files }) {
                 }`}
                 onClick={() => {
                   if (!isProcessing) {
-                    setTargetDocument(file.filename);
+                    setTargetDocument({
+                      filename: file.filename,
+                      document_id: file.document_id || file.id,
+                    });
                     setIsOpen(false);
                   }
                 }}
@@ -1351,91 +1370,48 @@ function ChatView({ targetDocument, setTargetDocument }) {
   const [files, setFiles] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
-  
   const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
-  const getStorageKey = () => {
-    return userEmail ? `studymind_chat_history_${userEmail}` : "studymind_chat_history";
-  };
+  const docDetails = getDocDetails(targetDocument);
+  const selectedDocName = docDetails.filename;
+
+  // Track resolved document_id (either passed directly or resolved from files list)
+  const [resolvedDocId, setResolvedDocId] = useState(docDetails.document_id);
+
+  useEffect(() => {
+    if (docDetails.document_id) {
+      setResolvedDocId(docDetails.document_id);
+    } else if (selectedDocName && files.length > 0) {
+      const match = files.find((f) => f.filename === selectedDocName);
+      if (match && (match.document_id || match.id)) {
+        setResolvedDocId(match.document_id || match.id);
+      }
+    } else if (!targetDocument) {
+      setResolvedDocId(null);
+    }
+  }, [targetDocument, files, docDetails.document_id, selectedDocName]);
 
   const welcomeMessage = {
     role: "assistant",
-    content:
-      "Hello! I'm your StudyMind AI assistant. Select a document or ask me anything about your uploaded study materials.",
+    content: selectedDocName
+      ? `Hello! I'm ready to answer any questions about "${selectedDocName}". What would you like to explore?`
+      : "Hello! I'm your StudyMind AI assistant. Select a document or ask me anything about your uploaded study materials.",
     timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   };
 
-  const [messages, setMessages] = useState(() => {
-    try {
-      const saved =
-        localStorage.getItem(getStorageKey()) ||
-        localStorage.getItem("studymind_chat_history");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [welcomeMessage];
-  });
+  // Immediate empty state on mount / doc switch: zero visual bleed guaranteed
+  const [messages, setMessages] = useState([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
-  // Save history to localStorage whenever messages change
-  useEffect(() => {
-    if (messages && messages.length > 0) {
-      try {
-        const key = getStorageKey();
-        localStorage.setItem(key, JSON.stringify(messages));
-        localStorage.setItem("studymind_chat_history", JSON.stringify(messages));
-      } catch {}
-    }
-  }, [messages, userEmail]);
-
-  // Load past conversation from backend on initial mount
-  useEffect(() => {
-    fetch(`${API_BASE}/chat-history`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (handle401(res)) return;
-        if (!res.ok) throw new Error("Failed to load chat history");
-        return res.json();
-      })
-      .then((data) => {
-        if (data && Array.isArray(data) && data.length > 0) {
-          const formatted = data.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-            sources: msg.sources || [],
-            timestamp: msg.timestamp
-              ? new Date(msg.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }));
-          setMessages(formatted);
-        }
-      })
-      .catch(() => {});
-  }, [token]);
-
-  // Save one message to the backend (fire-and-forget)
-  function saveMessage(message) {
-    fetch(`${API_BASE}/chat-history`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        role: message.role,
-        content: message.content,
-        sources: message.sources || null,
-      }),
-    }).catch(() => {
-      // Silent fail — losing a history save shouldn't break the chat UX
-    });
-  }
+  // Storage key strictly scoped to userEmail AND active document_id
+  const getStorageKey = (docId) => {
+    const scope = docId ? `doc_${docId}` : (selectedDocName ? `docname_${selectedDocName}` : "global");
+    return userEmail ? `studymind_chat_history_${userEmail}_${scope}` : `studymind_chat_history_${scope}`;
+  };
 
   // Fetch uploads to populate document scope selector
   function fetchUploads() {
@@ -1447,7 +1423,15 @@ function ChatView({ targetDocument, setTargetDocument }) {
         if (res.ok) return res.json();
       })
       .then((data) => {
-        if (data) setFiles(data);
+        if (data && Array.isArray(data)) {
+          setFiles(data);
+          if (!resolvedDocId && selectedDocName) {
+            const match = data.find((f) => f.filename === selectedDocName);
+            if (match && (match.document_id || match.id)) {
+              setResolvedDocId(match.document_id || match.id);
+            }
+          }
+        }
       })
       .catch(() => {});
   }
@@ -1458,6 +1442,93 @@ function ChatView({ targetDocument, setTargetDocument }) {
     return () => clearInterval(interval);
   }, [token]);
 
+  // Load past conversation from backend whenever resolvedDocId or selectedDocName changes
+  useEffect(() => {
+    let isCancelled = false;
+
+    // Immediately clear chat UI so zero carry-over occurs even for a single render frame
+    setMessages([]);
+    setIsHistoryLoading(true);
+
+    let url = `${API_BASE}/chat-history`;
+    if (resolvedDocId) {
+      url += `?document_id=${encodeURIComponent(resolvedDocId)}`;
+    }
+
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (handle401(res)) return;
+        if (!res.ok) throw new Error("Failed to load chat history");
+        return res.json();
+      })
+      .then((data) => {
+        if (isCancelled) return;
+        if (data && Array.isArray(data) && data.length > 0) {
+          const formatted = data.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            sources: msg.sources || [],
+            timing: msg.timing || null,
+            timestamp: msg.timestamp
+              ? new Date(msg.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }));
+          setMessages(formatted);
+        } else {
+          // If no previous history exists for this document, show starter welcome message
+          setMessages([welcomeMessage]);
+        }
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        setMessages([welcomeMessage]);
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [token, resolvedDocId, selectedDocName]);
+
+  // Save history to scoped localStorage
+  useEffect(() => {
+    if (messages && messages.length > 0 && !isHistoryLoading) {
+      try {
+        const key = getStorageKey(resolvedDocId);
+        localStorage.setItem(key, JSON.stringify(messages));
+      } catch {}
+    }
+  }, [messages, resolvedDocId, userEmail, isHistoryLoading]);
+
+  // Save one message to the backend
+  function saveMessage(message) {
+    fetch(`${API_BASE}/chat-history`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        role: message.role,
+        content: message.content,
+        sources: message.sources || null,
+        timing: message.timing || null,
+        document_id: resolvedDocId || null,
+      }),
+    }).catch(() => {
+      // Silent fail
+    });
+  }
+
   const scrollToBottom = () => {
     const container = document.getElementById("chat-messages-scroll");
     if (container) container.scrollTop = container.scrollHeight;
@@ -1465,7 +1536,7 @@ function ChatView({ targetDocument, setTargetDocument }) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isHistoryLoading]);
 
   const handleSend = async (e) => {
     e?.preventDefault();
@@ -1499,7 +1570,8 @@ function ChatView({ targetDocument, setTargetDocument }) {
           history: apiHistory,
           top_k: 4,
           include_sources: true,
-          filename: targetDocument || null,
+          filename: selectedDocName || null,
+          document_id: resolvedDocId || null,
         }),
       });
 
@@ -1539,7 +1611,40 @@ function ChatView({ targetDocument, setTargetDocument }) {
     }
   };
 
-  const clearHistory = () => {
+  // Delete chat history for document (with confirmation modal)
+  const handleDeleteDocHistory = async () => {
+    setIsDeletingHistory(true);
+    setDeleteError("");
+    try {
+      const docIdParam = resolvedDocId ? `?document_id=${encodeURIComponent(resolvedDocId)}` : "";
+      const res = await fetch(`${API_BASE}/chat-history${docIdParam}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (handle401(res)) return;
+
+      // Remove from localStorage cache
+      try {
+        const key = getStorageKey(resolvedDocId);
+        localStorage.removeItem(key);
+      } catch {}
+
+      // Reset to fresh starter message
+      setMessages([welcomeMessage]);
+      setShowDeleteModal(false);
+    } catch (err) {
+      console.error("Failed to delete chat history:", err);
+      setDeleteError("Failed to delete history from server. Please try again.");
+      setMessages([welcomeMessage]);
+      setShowDeleteModal(false);
+    } finally {
+      setIsDeletingHistory(false);
+    }
+  };
+
+  // Clear global chat history (for all-documents view)
+  const clearGlobalHistory = () => {
     if (window.confirm("Are you sure you want to clear your conversation history?")) {
       fetch(`${API_BASE}/chat-history`, {
         method: "DELETE",
@@ -1547,6 +1652,9 @@ function ChatView({ targetDocument, setTargetDocument }) {
       })
         .then((res) => {
           if (handle401(res)) return;
+          try {
+            localStorage.removeItem(getStorageKey(null));
+          } catch {}
           setMessages([welcomeMessage]);
         })
         .catch(() => {
@@ -1566,7 +1674,7 @@ function ChatView({ targetDocument, setTargetDocument }) {
             setTargetDocument={setTargetDocument}
             files={files}
           />
-          {targetDocument && (
+          {selectedDocName && (
             <button
               className="btn-clear-target-doc"
               onClick={() => setTargetDocument(null)}
@@ -1582,20 +1690,41 @@ function ChatView({ targetDocument, setTargetDocument }) {
             <span className="status-dot-green"></span>
             <span className="status-text">Online</span>
           </div>
-          <button className="btn-clear-chat" onClick={clearHistory}>
-            Clear
-          </button>
+
+          {selectedDocName ? (
+            <button
+              className="btn-delete-doc-chat"
+              onClick={() => {
+                setDeleteError("");
+                setShowDeleteModal(true);
+              }}
+              title={`Delete chat history for ${selectedDocName}`}
+            >
+              <Trash2 size={14} />
+              <span>Delete chat history</span>
+            </button>
+          ) : (
+            <button className="btn-clear-chat" onClick={clearGlobalHistory}>
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
-      {targetDocument && (
+      {selectedDocName && (
         <div className="target-doc-banner">
-          <span>Asking specifically about <strong>"{targetDocument}"</strong></span>
+          <span>Asking specifically about <strong>"{selectedDocName}"</strong></span>
         </div>
       )}
 
       <div className="chat-messages-scroll" id="chat-messages-scroll">
-        {(messages || []).map((msg, index) => (
+        {isHistoryLoading ? (
+          <div className="chat-loading-history">
+            <span className="mini-spinner"></span>
+            <span>Loading conversation for "{selectedDocName || 'All Documents'}"...</span>
+          </div>
+        ) : (
+          (messages || []).map((msg, index) => (
             <div key={index} className={`msg-wrapper ${msg.role === "user" ? "msg-user" : "msg-ai"}`}>
               <div
                 className={`msg-bubble ${
@@ -1622,7 +1751,7 @@ function ChatView({ targetDocument, setTargetDocument }) {
                         alignItems: "center",
                         gap: "6px",
                         boxShadow: "0 2px 8px rgba(239, 68, 68, 0.35)",
-                        border: "none"
+                        border: "none",
                       }}
                       onClick={() => {
                         if (msg.failedQuestion) {
@@ -1656,7 +1785,8 @@ function ChatView({ targetDocument, setTargetDocument }) {
                 <span className="msg-time">{msg.timestamp}</span>
               </div>
             </div>
-          ))}
+          ))
+        )}
 
         {isLoading && (
           <div className="msg-wrapper msg-ai">
@@ -1679,8 +1809,8 @@ function ChatView({ targetDocument, setTargetDocument }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            targetDocument
-              ? `Ask a question about ${targetDocument}...`
+            selectedDocName
+              ? `Ask a question about ${selectedDocName}...`
               : "Ask a question about your documents... (Press Enter to send)"
           }
           className="chat-text-input"
@@ -1690,6 +1820,61 @@ function ChatView({ targetDocument, setTargetDocument }) {
           <Send size={16} />
         </button>
       </form>
+
+      {/* Delete Chat History Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="modal-backdrop" onClick={() => !isDeletingHistory && setShowDeleteModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="modal-close-btn"
+              onClick={() => !isDeletingHistory && setShowDeleteModal(false)}
+              title="Close"
+              disabled={isDeletingHistory}
+            >
+              <X size={18} />
+            </button>
+            <div className="modal-icon-wrap" style={{ background: "rgba(239, 68, 68, 0.12)", color: "#ef4444" }}>
+              <Trash2 size={34} strokeWidth={1.75} />
+            </div>
+            <h3 className="modal-title">Delete Chat History</h3>
+            <p className="modal-desc">
+              Are you sure you want to delete the chat history for{" "}
+              <strong className="modal-filename">"{selectedDocName}"</strong>?
+            </p>
+            <p className="modal-subtext">
+              This action will permanently delete all questions and answers scoped to this document and clear related AI cache. This cannot be undone.
+            </p>
+            {deleteError && (
+              <div className="upload-msg error-msg" style={{ marginBottom: "1rem" }}>
+                {deleteError}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button
+                className="modal-btn-cancel"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeletingHistory}
+              >
+                Cancel
+              </button>
+              <button
+                className="modal-btn-delete"
+                onClick={handleDeleteDocHistory}
+                disabled={isDeletingHistory}
+              >
+                {isDeletingHistory ? (
+                  <>
+                    <span className="mini-spinner" style={{ marginRight: 6 }}></span>
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete History"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1708,8 +1893,17 @@ export default function Dashboard() {
   const [roadmapContext, setRoadmapContext] = useState(null);
   const { logout } = useAuth();
 
-  const handleAskAboutDocument = (filename) => {
-    setTargetDocument(filename);
+  const handleAskAboutDocument = (doc) => {
+    if (typeof doc === "string") {
+      setTargetDocument({ filename: doc, document_id: null });
+    } else if (doc && typeof doc === "object") {
+      setTargetDocument({
+        filename: doc.filename,
+        document_id: doc.document_id || doc.id || null,
+      });
+    } else {
+      setTargetDocument(null);
+    }
     setActiveTab("chat");
   };
 
@@ -1754,6 +1948,7 @@ export default function Dashboard() {
           )}
           {activeTab === "chat" && (
             <ChatView
+              key={getDocDetails(targetDocument).document_id || getDocDetails(targetDocument).filename || "global"}
               targetDocument={targetDocument}
               setTargetDocument={setTargetDocument}
             />

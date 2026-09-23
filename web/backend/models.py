@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from typing import Literal, Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field, EmailStr
@@ -66,6 +66,7 @@ class ChatMessage(BaseModel):
     user_id: str
     role: str  # "user" or "assistant"
     content: str
+    document_id: Optional[str] = None
     sources: Optional[List[Any]] = None
     timing: Optional[Dict[str, Any]] = None
     timestamp: datetime = Field(default_factory=utc_now)

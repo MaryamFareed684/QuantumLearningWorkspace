@@ -28,6 +28,7 @@ class AskRequest(BaseModel):
     question: str
     history: Optional[List[HistoryItem]] = None
     filename: Optional[str] = None
+    document_id: Optional[str] = None
     top_k: Optional[int] = 5
     include_sources: Optional[bool] = True
     rerank: Optional[bool] = True
@@ -80,6 +81,8 @@ async def ask(
 
     if request.filename:
         payload["filename"] = request.filename
+    if request.document_id:
+        payload["document_id"] = request.document_id
 
     target_url = f"{CHATBOT_SERVICE_URL.rstrip('/')}/ask"
 
@@ -155,3 +158,30 @@ async def ask(
                 "Please make sure it's running and try again."
             ),
         )
+
+
+@router.delete("/chat/document/{document_id}")
+@router.delete("/internal/cache/document/{document_id}")
+async def delete_document_chat_cache(
+    document_id: str,
+    current_user_email: str = Depends(get_current_user_email),
+):
+    """Proxy endpoint to call Team Mu's cache invalidation endpoint for a specific document."""
+    resolved_user_id = current_user_email.strip().lower()
+    clean_doc_id = document_id.strip()
+    target_url = f"{CHATBOT_SERVICE_URL.rstrip('/')}/internal/cache/document/{clean_doc_id}"
+    forward_headers = {
+        "Authorization": f"Bearer {create_access_token(resolved_user_id)}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.delete(target_url, headers=forward_headers)
+            try:
+                data = res.json()
+            except Exception:
+                data = {"status_code": res.status_code, "text": res.text}
+            return {"success": res.status_code == 200, "data": data}
+    except Exception as e:
+        logger.warning(f"Failed to call Team Mu cache invalidation: {e}")
+        return {"success": False, "error": str(e)}
+

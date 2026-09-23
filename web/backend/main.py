@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 
-from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Depends, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader
 import httpx
@@ -101,6 +101,7 @@ UPLOAD_DIRECTORY = os.getenv(
 )
 INGESTION_SERVICE_URL = os.getenv("INGESTION_SERVICE_URL", "http://localhost:8001")
 print(f"DEBUG: INGESTION_SERVICE_URL = {repr(INGESTION_SERVICE_URL)}", flush=True)
+CHATBOT_SERVICE_URL = os.getenv("CHATBOT_SERVICE_URL", "http://localhost:8000")
 
 async def process_file_ingestion(file_id: Any, document_id: str, filename: str, user_id: str):
     print("🚀 START ingestion process")
@@ -1068,7 +1069,7 @@ async def save_chat_message(
     message: dict,
     current_user_email: str = Depends(get_current_user_email),
 ):
-    """Save one chat message (either a user question or an assistant answer)."""
+    """Save one chat message (either a user question or an assistant answer), scoped to document_id if provided."""
     chat_history = get_chat_history_collection()
     email_clean = current_user_email.strip().lower()
 
@@ -1076,6 +1077,7 @@ async def save_chat_message(
         user_id=email_clean,
         role=message.get("role", "user"),
         content=message.get("content", ""),
+        document_id=message.get("document_id"),
         sources=message.get("sources"),
         timing=message.get("timing"),
     )
@@ -1085,11 +1087,23 @@ async def save_chat_message(
 
 
 @app.get("/chat-history")
-async def get_chat_history(current_user_email: str = Depends(get_current_user_email)):
-    """Return this user's past conversation, oldest first."""
+async def get_chat_history(
+    document_id: Optional[str] = Query(None),
+    current_user_email: str = Depends(get_current_user_email),
+):
+    """Return this user's past conversation, oldest first, optionally scoped to a document_id."""
     chat_history = get_chat_history_collection()
     email_clean = current_user_email.strip().lower()
-    cursor = chat_history.find({"user_id": email_clean}).sort("timestamp", 1)
+
+    if document_id and document_id.strip():
+        query = {"user_id": email_clean, "document_id": document_id.strip()}
+    else:
+        query = {
+            "user_id": email_clean,
+            "$or": [{"document_id": None}, {"document_id": {"$exists": False}}],
+        }
+
+    cursor = chat_history.find(query).sort("timestamp", 1)
 
     messages = []
     async for doc in cursor:
@@ -1099,6 +1113,7 @@ async def get_chat_history(current_user_email: str = Depends(get_current_user_em
         messages.append({
             "role": doc.get("role"),
             "content": doc.get("content"),
+            "document_id": doc.get("document_id"),
             "sources": doc.get("sources"),
             "timing": doc.get("timing"),
             "timestamp": ts,
@@ -1108,12 +1123,47 @@ async def get_chat_history(current_user_email: str = Depends(get_current_user_em
 
 
 @app.delete("/chat-history")
-async def clear_chat_history(current_user_email: str = Depends(get_current_user_email)):
-    """Delete this user's entire conversation history."""
+async def clear_chat_history(
+    document_id: Optional[str] = Query(None),
+    current_user_email: str = Depends(get_current_user_email),
+):
+    """Delete this user's conversation history, optionally scoped to a document_id, and invalidate Team Mu's cache."""
     chat_history = get_chat_history_collection()
     email_clean = current_user_email.strip().lower()
-    await chat_history.delete_many({"user_id": email_clean})
-    return {"message": "cleared"}
+
+    if document_id and document_id.strip():
+        doc_id_clean = document_id.strip()
+        result = await chat_history.delete_many({
+            "user_id": email_clean,
+            "document_id": doc_id_clean,
+        })
+
+        # Call Team Mu's cache invalidation endpoint
+        try:
+            target_url = f"{CHATBOT_SERVICE_URL.rstrip('/')}/internal/cache/document/{doc_id_clean}"
+            internal_token = create_access_token(email=email_clean)
+            headers = {"Authorization": f"Bearer {internal_token}"}
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.delete(target_url, headers=headers)
+                print(f"[CHAT] Invalided Team Mu cache for {doc_id_clean}: {res.status_code}")
+        except Exception as e:
+            print(f"[CHAT] Note: Team Mu cache invalidate call: {e}")
+
+        return {
+            "message": "cleared",
+            "document_id": doc_id_clean,
+            "deleted_count": result.deleted_count,
+        }
+    else:
+        result = await chat_history.delete_many({
+            "user_id": email_clean,
+            "$or": [{"document_id": None}, {"document_id": {"$exists": False}}],
+        })
+        return {
+            "message": "cleared",
+            "scope": "global",
+            "deleted_count": result.deleted_count,
+        }
 
 
 @app.post("/quiz-results")
