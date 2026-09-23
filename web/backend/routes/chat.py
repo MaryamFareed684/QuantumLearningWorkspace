@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
+from bson import ObjectId
+
 from web.backend.auth_utils import get_current_user_email, create_access_token
+from web.backend.database import get_uploads_collection
 
 load_dotenv()
 
@@ -38,6 +41,48 @@ class AskRequest(BaseModel):
 
 # ---------------- Proxy Endpoint ----------------
 
+async def _resolve_vector_document_id(
+    user_id: str,
+    document_id: Optional[str],
+    filename: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Map the document the UI selected to the id stored on its vector chunks.
+
+    The ingestion service generates its own document id for the chunks, which
+    the upload record keeps as `vector_document_id`, separate from the upload's
+    own `document_id`. The UI may send either of those, the Mongo `_id`, or only
+    the filename. Only this user's upload records are searched.
+
+    Returns (document_id_for_chatbot, filename); falls back to what was sent
+    if no matching upload record is found.
+    """
+    if not document_id and not filename:
+        return None, None
+    try:
+        uploads = get_uploads_collection()
+        match = None
+        if document_id:
+            candidates: List[Dict[str, Any]] = [
+                {"vector_document_id": document_id},
+                {"document_id": document_id},
+            ]
+            if ObjectId.is_valid(document_id):
+                candidates.append({"_id": ObjectId(document_id)})
+            match = await uploads.find_one({"user_id": user_id, "$or": candidates})
+        if match is None and filename:
+            match = await uploads.find_one(
+                {"user_id": user_id, "filename": filename},
+                sort=[("upload_date", -1)],
+            )
+        if match:
+            resolved_id = match.get("vector_document_id") or match.get("document_id") or document_id
+            return resolved_id, (match.get("filename") or filename)
+    except Exception as e:
+        logger.warning(f"Could not resolve selected document for chat scoping: {e}")
+    return document_id, filename
+
+
 @router.post("/ask")
 async def ask(
     request: AskRequest,
@@ -46,6 +91,11 @@ async def ask(
 ):
     # Strictly derive user_id from the authenticated JWT session (email) only.
     resolved_user_id = current_user_email.strip().lower()
+
+    # Selected document -> id stored on its chunks, so the chatbot searches only that document.
+    scope_document_id, scope_filename = await _resolve_vector_document_id(
+        resolved_user_id, request.document_id, request.filename
+    )
 
     # Helper to check if user is asking for a general summary/overview
     q_lower = request.question.lower().strip()
@@ -57,8 +107,9 @@ async def ask(
 
     outgoing_question = request.question
     if any(p in q_lower for p in summary_phrases):
-        if request.filename:
-            outgoing_question = f"Provide a detailed summary and overview of the main topics, sections, and key details in the document '{request.filename}'."
+        if scope_filename:
+            outgoing_question = f"Provide a detailed summary and overview of the main topics, sections, and key details in the document '{scope_filename}'."
+        else:
             outgoing_question = "Provide a detailed summary and overview of the main topics, sections, and key details in the uploaded study documents."
 
     # Build payload for chatbot service
@@ -79,10 +130,10 @@ async def ask(
         "skip_cache": request.skip_cache,
     }
 
-    if request.filename:
-        payload["filename"] = request.filename
-    if request.document_id:
-        payload["document_id"] = request.document_id
+    if scope_filename:
+        payload["filename"] = scope_filename
+    if scope_document_id:
+        payload["document_id"] = scope_document_id
 
     target_url = f"{CHATBOT_SERVICE_URL.rstrip('/')}/ask"
 
