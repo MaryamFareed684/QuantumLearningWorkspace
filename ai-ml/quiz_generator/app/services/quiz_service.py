@@ -37,6 +37,7 @@ class QuizService:
         number_of_questions: int = 5,
         difficulty: str = "medium",
         top_k: int = 3,
+        document_id: str = None,
     ) -> dict:
         """
         RAG PIPELINE (The Bridge in action):
@@ -59,9 +60,16 @@ class QuizService:
         """
         # A. Search for context based on the user's topic, scoped to
         #    this user's own content only.
-        search_results = self.embedder.search(topic, top_k=top_k, user_id=user_id)
+        #    When document_id is given, only that document's chunks are searched.
+        search_results = self.embedder.search(
+            topic, top_k=top_k, user_id=user_id, document_id=document_id
+        )
 
         if not search_results:
+            if document_id:
+                return {
+                    "error": f"No relevant information found in the selected document for topic: '{topic}'"
+                }
             return {
                 "error": f"No relevant information found in your database for topic: '{topic}'"
             }

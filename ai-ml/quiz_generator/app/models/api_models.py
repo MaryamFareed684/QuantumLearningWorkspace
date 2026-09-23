@@ -1,4 +1,6 @@
 from __future__ import annotations
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -18,6 +20,14 @@ class GenerateQuizRequest(BaseModel):
     quiz_type: str = Field(
         ...,
         description="One of: mcq, true_false, fill_blank, short_answer.",
+    )
+    document_id: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Optional: limit retrieval to one of the user's documents "
+            "(chunk metadata document_id, i.e. the upload's vector_document_id)."
+        ),
     )
 
 
