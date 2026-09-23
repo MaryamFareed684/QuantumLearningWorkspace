@@ -1166,15 +1166,111 @@ function DocumentsView({
   );
 }
 
+// ─── Defense-In-Depth Response Content Sanitizer ────────────────────────────
+
+export function extractCleanAnswerText(content) {
+  if (content === null || content === undefined) return "";
+
+  // 1. If content is an object, extract common primary answer keys
+  if (typeof content === "object") {
+    const candidate =
+      content.answer !== undefined
+        ? content.answer
+        : content.content !== undefined
+        ? content.content
+        : content.response !== undefined
+        ? content.response
+        : content.text !== undefined
+        ? content.text
+        : content.message !== undefined
+        ? content.message
+        : null;
+
+    if (candidate !== null && candidate !== undefined) {
+      return extractCleanAnswerText(candidate);
+    }
+
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return "";
+    }
+  }
+
+  let text = String(content).trim();
+
+  // 2. If wrapped in markdown code block ```json ... ``` or ``` ... ```
+  const codeBlockMatch = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (codeBlockMatch) {
+    const inner = codeBlockMatch[1].trim();
+    if (
+      (inner.startsWith("{") && inner.endsWith("}")) ||
+      (inner.startsWith("[") && inner.endsWith("]"))
+    ) {
+      try {
+        const parsed = JSON.parse(inner);
+        if (parsed && typeof parsed === "object") {
+          const candidate =
+            parsed.answer !== undefined
+              ? parsed.answer
+              : parsed.content !== undefined
+              ? parsed.content
+              : parsed.response !== undefined
+              ? parsed.response
+              : parsed.text !== undefined
+              ? parsed.text
+              : parsed.message !== undefined
+              ? parsed.message
+              : null;
+          if (candidate !== null && candidate !== undefined) {
+            return extractCleanAnswerText(candidate);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 3. If raw JSON string like {"answer": "...", "sources": ...}
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object") {
+        const candidate =
+          parsed.answer !== undefined
+            ? parsed.answer
+            : parsed.content !== undefined
+            ? parsed.content
+            : parsed.response !== undefined
+            ? parsed.response
+            : parsed.text !== undefined
+            ? parsed.text
+            : parsed.message !== undefined
+            ? parsed.message
+            : null;
+        if (candidate !== null && candidate !== undefined) {
+          return extractCleanAnswerText(candidate);
+        }
+      }
+    } catch {}
+  }
+
+  return text
+    // Strip parenthesized/bracketed references/sources/documents: (Reference: ...), [Source: ...], (source ...)
+    .replace(/\s*[\(\[]\s*(?:reference|source|citation|document|doc)\s*:?\s*[^)\]\n]+[\)\]]/gi, "")
+    // Strip standalone raw UUID/chunk tags in parens/brackets: (2cae2f83-275f-41d3-b70a-33e6103efd1e_chunk0)
+    .replace(/\s*[\(\[]\s*`?[a-f0-9\-]{30,}(?:_chunk\d+)?`?\s*[\)\]]/gi, "")
+    // Strip standalone trailing reference lines
+    .replace(/(?:\r?\n)+\s*(?:references?|sources?|citations?)\s*:\s*[^\n]+/gi, "")
+    .trim();
+}
+
 // ─── Formatted Chat Message Component ───────────────────────────────────────
 
 function FormattedChatMessage({ content }) {
-  if (!content) return null;
+  const rawText = extractCleanAnswerText(content);
+  if (!rawText) return null;
 
-  // Remove ugly inline chunk tags like (source `2cae..._chunk0`)
-  // because sources are cleanly displayed in the bottom chip list
-  const cleaned = content.replace(/\s*\(\s*source\s*`?[a-zA-Z0-9\-_]+(?:_chunk\d+)?`?\s*\)/gi, "").trim();
-
+  const cleaned = rawText;
   const lines = cleaned.split("\n");
   const elements = [];
 
@@ -1468,8 +1564,8 @@ function ChatView({ targetDocument, setTargetDocument }) {
         if (data && Array.isArray(data) && data.length > 0) {
           const formatted = data.map((msg) => ({
             role: msg.role,
-            content: msg.content,
-            sources: msg.sources || [],
+            content: extractCleanAnswerText(msg.content),
+            sources: Array.isArray(msg.sources) ? msg.sources : [],
             timing: msg.timing || null,
             timestamp: msg.timestamp
               ? new Date(msg.timestamp).toLocaleTimeString([], {
@@ -1580,10 +1676,29 @@ function ChatView({ targetDocument, setTargetDocument }) {
 
       const data = await response.json();
 
+      const rawAnswer =
+        typeof data === "string"
+          ? data
+          : data && typeof data === "object"
+          ? data.answer !== undefined
+            ? data.answer
+            : data.content !== undefined
+            ? data.content
+            : data.response !== undefined
+            ? data.response
+            : data.text !== undefined
+            ? data.text
+            : data.message !== undefined
+            ? data.message
+            : ""
+          : "";
+
+      const cleanAnswer = extractCleanAnswerText(rawAnswer);
+
       const assistantMessage = {
         role: "assistant",
-        content: data.answer,
-        sources: data.sources || [],
+        content: cleanAnswer,
+        sources: Array.isArray(data.sources) ? data.sources : [],
         timing: data.timing || null,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
@@ -1764,15 +1879,19 @@ function ChatView({ targetDocument, setTargetDocument }) {
                   </div>
                 )}
 
-                {msg.sources && msg.sources.length > 0 && !/^(hello|hi|hey)[!,.\s]/i.test(msg.content.trim()) && (
+                {msg.sources && msg.sources.length > 0 && !/^(hello|hi|hey)[!,.\s]/i.test(String(msg.content || "").trim()) && (
                   <div className="msg-sources">
                     <span className="sources-title"><Search size={13} /> Sources:</span>
                     <div className="sources-list">
-                      {msg.sources.map((src, i) => (
-                        <span key={i} className="source-chip" title={src.chunk}>
-                          {src.document}
-                        </span>
-                      ))}
+                      {msg.sources.map((src, i) => {
+                        const docName = typeof src === "string" ? src : (src?.document || src?.filename || src?.document_id || "Document");
+                        const chunkLabel = typeof src === "string" ? "" : (src?.chunk !== undefined ? String(src.chunk) : "");
+                        return (
+                          <span key={i} className="source-chip" title={chunkLabel}>
+                            {docName}
+                          </span>
+                        );
+                      })}
                     </div>
                     {msg.timing && (
                       <span className="source-speed">

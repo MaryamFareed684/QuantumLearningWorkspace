@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import "./ChatInterface.css";
+import { extractCleanAnswerText } from "./Dashboard.jsx";
 
 const getEmailFromToken = (token) => {
   if (!token) return null;
@@ -137,10 +138,29 @@ export default function ChatInterface({ onBack }) {
 
       const data = await response.json();
       
+      const rawAnswer =
+        typeof data === "string"
+          ? data
+          : data && typeof data === "object"
+          ? data.answer !== undefined
+            ? data.answer
+            : data.content !== undefined
+            ? data.content
+            : data.response !== undefined
+            ? data.response
+            : data.text !== undefined
+            ? data.text
+            : data.message !== undefined
+            ? data.message
+            : ""
+          : "";
+
+      const cleanAnswer = extractCleanAnswerText(rawAnswer);
+
       const assistantMessage = {
         role: "assistant",
-        content: data.answer,
-        sources: data.sources || [],
+        content: cleanAnswer,
+        sources: Array.isArray(data.sources) ? data.sources : [],
         timing: data.timing || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
@@ -236,7 +256,7 @@ export default function ChatInterface({ onBack }) {
                 </div>
               )}
 
-              <div className="message-content">{msg.content}</div>
+              <div className="message-content">{extractCleanAnswerText(msg.content)}</div>
 
               {msg.isError && (
                 <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid rgba(239, 68, 68, 0.25)" }}>
