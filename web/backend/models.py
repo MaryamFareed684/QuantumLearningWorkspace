@@ -60,6 +60,10 @@ class Upload(BaseModel):
     chunks_stored: Optional[int] = 0
     last_error: Optional[str] = None
     processed_at: Optional[datetime] = None
+    # Document info shown in the preview/info view; saved at processing time.
+    file_size_bytes: Optional[int] = None
+    page_count: Optional[int] = None
+    word_count: Optional[int] = None
 
 
 class ChatMessage(BaseModel):
