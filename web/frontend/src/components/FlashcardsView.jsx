@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import "./FlashcardsView.css";
 import CustomSelect from "./CustomSelect.jsx";
+import SourceSelector from "./SourceSelector.jsx";
 
 const QUICK_TOPICS = [
   "Quantum Computing",
@@ -329,43 +330,17 @@ export default function FlashcardsView({ initialContext }) {
           </div>
         </div>
 
-        <div className="flashcards-source-tabs">
-            <button
-              type="button"
-              className={`flashcards-source-tab ${sourceMode === "topic" ? "active" : ""}`}
-              onClick={() => handleSourceModeChange("topic")}
-            >
-              Any Topic
-            </button>
-            <button
-              type="button"
-              className={`flashcards-source-tab ${sourceMode === "document" ? "active" : ""}`}
-              onClick={() => handleSourceModeChange("document")}
-            >
-              From a Document
-            </button>
-          </div>
+        <SourceSelector
+            mode={sourceMode}
+            onModeChange={handleSourceModeChange}
+            documents={docFiles}
+            selectedDocumentId={selectedFileId}
+            onSelectDocument={handleSelectDocFile}
+            disabled={isGenerating}
+          />
 
           <form onSubmit={handleGenerateFlashcards} className="flashcards-form">
-            {sourceMode === "document" && (
-              <div className="flashcards-input-group">
-                <label className="flashcards-label" htmlFor="flashcard-doc-select">
-                  Choose Document:
-                </label>
-                <CustomSelect
-                  className="flashcards-custom-select flashcards-doc-select"
-                  value={selectedFileId}
-                  onChange={handleSelectDocFile}
-                  options={
-                    docFiles.length > 0
-                      ? docFiles.map((f) => ({ value: f.id, label: f.filename }))
-                      : [{ value: "", label: "No documents uploaded yet" }]
-                  }
-                  disabled={isGenerating || docFiles.length === 0}
-                  title="Select a document"
-                />
-              </div>
-            )}
+            
 
             <div className="flashcards-input-group">
               <label className="flashcards-label" htmlFor="flashcard-topic">

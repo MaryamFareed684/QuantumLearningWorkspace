@@ -2,6 +2,8 @@
 import { FileEdit, Target, CheckCircle2, MessageSquare, AlertTriangle, Circle } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
+import SourceSelector from "./SourceSelector.jsx";
+import { cleanTopicFromFilename, findDocument, useUploadedDocuments } from "./sourceSelection.js";
 import "./QuizView.css";
 
 export default function QuizView({ initialContext, onLaunchRoadmap }) {
@@ -14,6 +16,12 @@ export default function QuizView({ initialContext, onLaunchRoadmap }) {
   const [questionCount, setQuestionCount] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
+
+  // Source: any topic, or one of the user's uploaded documents
+  const [sourceMode, setSourceMode] = useState(initialContext?.document_id ? "document" : "topic");
+  const [selectedFileId, setSelectedFileId] = useState(initialContext?.document_id || "");
+  const documents = useUploadedDocuments(token);
+  const selectedFile = findDocument(documents, selectedFileId);
 
   // Quiz Display State
   const [quizId, setQuizId] = useState(initialContext?.quizId || "");
@@ -39,10 +47,26 @@ export default function QuizView({ initialContext, onLaunchRoadmap }) {
     }
   }, [initialContext]);
 
+  const handleSourceModeChange = (mode) => {
+    setSourceMode(mode);
+    if (mode === "topic") setSelectedFileId("");
+  };
+
+  const handleSelectDocument = (fileId) => {
+    setSelectedFileId(fileId);
+    const file = findDocument(documents, fileId);
+    if (file) setTopic(cleanTopicFromFilename(file.filename));
+  };
+
   // Handle quiz generation
   const handleGenerateQuiz = async (e) => {
     e.preventDefault();
     setGenerateError("");
+
+    if (sourceMode === "document" && !selectedFile) {
+      setGenerateError("Please choose a document");
+      return;
+    }
 
     if (!topic.trim()) {
       setGenerateError("Please enter a topic");
@@ -66,6 +90,9 @@ export default function QuizView({ initialContext, onLaunchRoadmap }) {
           topic: topic.trim(),
           question_count: parseInt(questionCount),
           quiz_type: quizType,
+          ...(sourceMode === "document" && selectedFile
+            ? { document_id: selectedFile.document_id || selectedFile.id }
+            : {}),
         }),
       });
 
@@ -262,10 +289,19 @@ export default function QuizView({ initialContext, onLaunchRoadmap }) {
           <h2><FileEdit size={18} style={{ verticalAlign: "middle", marginRight: "8px" }} />Create a Quiz</h2>
           <p className="quiz-subtitle">Test your knowledge on any topic from your study materials</p>
 
+          <SourceSelector
+            mode={sourceMode}
+            onModeChange={handleSourceModeChange}
+            documents={documents}
+            selectedDocumentId={selectedFile ? selectedFile.id : selectedFileId}
+            onSelectDocument={handleSelectDocument}
+            disabled={isGenerating}
+          />
+
           <form onSubmit={handleGenerateQuiz} className="quiz-form">
             {/* Topic Input */}
             <div className="form-group">
-              <label className="form-label">Topic</label>
+              <label className="form-label">{sourceMode === "document" ? "Focus Topic (from selected document)" : "Topic"}</label>
               <input
                 type="text"
                 className="form-input"
@@ -274,7 +310,7 @@ export default function QuizView({ initialContext, onLaunchRoadmap }) {
                 onChange={(e) => setTopic(e.target.value)}
                 disabled={isGenerating}
               />
-              <p className="form-hint">Enter a topic from your uploaded documents</p>
+              <p className="form-hint">{sourceMode === "document" ? "Filled in from the document title; narrow it to a section if you like" : "Enter a topic from your uploaded documents"}</p>
             </div>
 
             {/* Quiz Type Selection */}

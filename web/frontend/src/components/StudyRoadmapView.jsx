@@ -1,6 +1,8 @@
 ﻿import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Map, Target, AlertTriangle, ClipboardList, Clock, Search } from "lucide-react";
+import SourceSelector from "./SourceSelector.jsx";
+import { cleanTopicFromFilename, findDocument, useUploadedDocuments } from "./sourceSelection.js";
 import "./StudyRoadmapView.css";
 
 // Accent colours keyed to priority
@@ -133,6 +135,24 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
     return () => { active = false; };
   }, [token, API_BASE, initialContext]);
 
+  // Source: any topic, or one of the user's uploaded documents
+  const [sourceMode, setSourceMode] = useState(initialContext?.document_id ? "document" : "topic");
+  const [selectedFileId, setSelectedFileId] = useState(initialContext?.document_id || "");
+  const documents = useUploadedDocuments(token);
+  const selectedFile = findDocument(documents, selectedFileId);
+
+  const handleSourceModeChange = (mode) => {
+    setSourceMode(mode);
+    setTopicError("");
+    if (mode === "topic") setSelectedFileId("");
+  };
+
+  const handleSelectDocument = (fileId) => {
+    setSelectedFileId(fileId);
+    const file = findDocument(documents, fileId);
+    if (file) setTopicInput(cleanTopicFromFilename(file.filename));
+  };
+
   const handleAction = (targetTab) => {
     if (onNavigate && targetTab) onNavigate(targetTab);
   };
@@ -140,6 +160,10 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
   const handleGenerateTopicRoadmap = async (e) => {
     e.preventDefault();
     const cleanTopic = topicInput.trim();
+    if (sourceMode === "document" && !selectedFile) {
+      setTopicError("Please choose a document to generate a roadmap from.");
+      return;
+    }
     if (!cleanTopic) {
       setTopicError("Please enter a topic to generate a roadmap.");
       return;
@@ -152,11 +176,24 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
       const headers = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch(`${API_BASE}/roadmap/generate-from-topic`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ topic: cleanTopic, step_count: 5 }),
-      });
+      // Same endpoints the Dashboard document card and the topic form already use.
+      const fromDocument = sourceMode === "document" && selectedFile;
+      const res = await fetch(
+        `${API_BASE}/roadmap/${fromDocument ? "generate-from-doc" : "generate-from-topic"}`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(
+            fromDocument
+              ? {
+                  document_id: selectedFile.document_id || selectedFile.id,
+                  filename: selectedFile.filename,
+                  topic: cleanTopic,
+                }
+              : { topic: cleanTopic, step_count: 5 }
+          ),
+        }
+      );
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -174,7 +211,7 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
         setSubject(data.subject || `Roadmap: ${cleanTopic}`);
         setHasActivity(true);
         setError(null);
-        setTopicInput("");
+        if (sourceMode === "topic") setTopicInput("");
       } else {
         setTopicError("No roadmap could be generated for this topic.");
       }
@@ -209,15 +246,23 @@ export default function StudyRoadmapView({ onNavigate, initialContext }) {
 
       {/* Custom Topic Generator */}
       <form className="roadmap-topic-form" onSubmit={handleGenerateTopicRoadmap}>
+        <SourceSelector
+          mode={sourceMode}
+          onModeChange={handleSourceModeChange}
+          documents={documents}
+          selectedDocumentId={selectedFile ? selectedFile.id : selectedFileId}
+          onSelectDocument={handleSelectDocument}
+          disabled={isGeneratingTopic}
+        />
         <label className="roadmap-topic-label" htmlFor="roadmap-topic-input">
-          Generate a roadmap for any topic:
+          {sourceMode === "document" ? "Focus topic (from selected document):" : "Generate a roadmap for any topic:"}
         </label>
         <div className="roadmap-topic-input-row">
           <input
             id="roadmap-topic-input"
             type="text"
             className="roadmap-topic-input"
-            placeholder="e.g. Organic Chemistry, Linear Algebra, World War II..."
+            placeholder={sourceMode === "document" ? "Filled in from the document title..." : "e.g. Organic Chemistry, Linear Algebra, World War II..."}
             value={topicInput}
             onChange={(e) => setTopicInput(e.target.value)}
             disabled={isGeneratingTopic}
