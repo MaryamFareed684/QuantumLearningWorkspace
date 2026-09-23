@@ -20,6 +20,8 @@ from web.backend.database import (
 )
 from web.backend.auth_utils import get_current_user_email
 
+from web.backend.document_scope import resolve_vector_document_id
+
 logger = logging.getLogger("uvicorn")
 router = APIRouter()
 
@@ -87,7 +89,13 @@ async def generate_quiz_proxy(
         "difficulty": "medium",
     }
     if body.document_id:
-        payload["document_id"] = body.document_id
+        # The quiz generator filters chunks by the id stored on them (vector_document_id),
+        # which differs from the upload's own document_id that the UI sends.
+        scope_document_id, _ = await resolve_vector_document_id(
+            user_id.strip().lower(), body.document_id, None
+        )
+        if scope_document_id:
+            payload["document_id"] = scope_document_id
 
     try:
         timeout = httpx.Timeout(

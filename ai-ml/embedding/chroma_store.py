@@ -103,11 +103,18 @@ def query_chunks(
     collection = get_collection()
     model = get_embedding_model()
 
-    where = {}
+    # ChromaDB needs "$and" to combine more than one condition; a plain dict
+    # with two keys is rejected.
+    conditions = []
     if user_id is not None:
-        where["user_id"] = user_id
+        conditions.append({"user_id": user_id})
     if document_id is not None:
-        where["document_id"] = document_id
+        conditions.append({"document_id": document_id})
+    where = None
+    if len(conditions) == 1:
+        where = conditions[0]
+    elif conditions:
+        where = {"$and": conditions}
 
     query_embedding = model.encode(query_text)[0]
 

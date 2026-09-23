@@ -66,6 +66,7 @@ def generate_quiz_endpoint(
             question_type=body.quiz_type,
             user_id=user_id,
             number_of_questions=body.question_count,
+            document_id=body.document_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
