@@ -130,7 +130,10 @@ async def generate_quiz_proxy(
             if not topic_words:
                 topic_words = [topic_clean]
 
-            if raw_questions:
+            # A quiz scoped to one document already draws only on that document, and
+            # its topic is usually just the filename, so the word check does not apply.
+            scoped_to_document = bool(payload.get("document_id"))
+            if raw_questions and not scoped_to_document:
                 # Combine ALL question text + options + explanations for searching
                 all_text = " ".join(
                     (
