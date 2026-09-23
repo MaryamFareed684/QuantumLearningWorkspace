@@ -34,6 +34,8 @@ from web.backend.models import (
 )
 from web.backend.email_service import send_otp_email
 from web.backend.question_counter import count_meaningful_questions
+from web.backend.document_stats import extract_document_stats, format_file_size
+import asyncio
 import random
 import secrets
 from web.backend.database import (
@@ -161,6 +163,10 @@ async def process_file_ingestion(file_id: Any, document_id: str, filename: str, 
         new_status = "Failed"
         last_error = "File not found on disk"
 
+    # File size / page count / word count, saved on the upload record so the
+    # document info view does not depend on the file staying on disk.
+    document_stats = await asyncio.to_thread(extract_document_stats, file_path, filename)
+
     query: Dict[str, Any] = {"user_id": user_id}
     if file_id:
         try:
@@ -176,6 +182,7 @@ async def process_file_ingestion(file_id: Any, document_id: str, filename: str, 
         "status": new_status,
         "document_id": document_id,
         "vector_document_id": returned_document_id,
+        **document_stats,
         "chunks_stored": chunks_stored,
         "processed_at": datetime.now(timezone.utc),
         "last_error": last_error,
@@ -1026,24 +1033,20 @@ async def get_document_preview(
         if os.path.exists(candidate_path):
             file_path = candidate_path
 
-    file_size = None
-    if file_path and os.path.exists(file_path):
-        size_bytes = os.path.getsize(file_path)
-        file_size = f"{size_bytes / (1024 * 1024):.2f} MB"
+    # Saved on the upload record at processing time. The file on disk can be gone
+    # after a redeploy/restart, so it is only a fallback, and whatever it yields is
+    # written back so older uploads keep their info from now on.
+    stats = {key: upload_doc.get(key) for key in ("file_size_bytes", "page_count", "word_count")}
+    if file_path and any(value is None for value in stats.values()):
+        computed = await asyncio.to_thread(extract_document_stats, file_path, filename)
+        missing = {k: v for k, v in computed.items() if stats.get(k) is None}
+        if missing:
+            stats.update(missing)
+            await uploads.update_one({"_id": upload_doc["_id"]}, {"$set": missing})
 
-    page_count = None
-    word_count = None
-    if file_path and (filename.lower().endswith(".pdf") or file_path.endswith(".pdf")) and os.path.exists(file_path):
-        try:
-            reader = PdfReader(file_path)
-            page_count = len(reader.pages)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() or ""
-            if text.strip():
-                word_count = len(text.split())
-        except Exception:
-            pass
+    file_size = format_file_size(stats["file_size_bytes"])
+    page_count = stats["page_count"]
+    word_count = stats["word_count"]
 
     file_type = filename.split(".")[-1].upper() if "." in filename else "FILE"
     upload_date = upload_doc.get("upload_date")
