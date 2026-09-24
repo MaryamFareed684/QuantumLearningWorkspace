@@ -12,7 +12,12 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from embedding.chroma_store import delete_chunks
 
-from quiz_generator.app.models.api_models import GenerateQuizRequest, GenerateQuizResponse
+from quiz_generator.app.models.api_models import (
+    GenerateQuizRequest,
+    GenerateQuizResponse,
+    RetrieveContextRequest,
+    RetrieveContextResponse,
+)
 from quiz_generator.app.services.quiz_service import QuizService
 from quiz_generator.app.auth import get_current_user_id
 
@@ -39,6 +44,30 @@ def get_service() -> QuizService:
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.post("/retrieve-context", response_model=RetrieveContextResponse)
+def retrieve_context_endpoint(
+    body: RetrieveContextRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> RetrieveContextResponse:
+    """
+    The user's stored chunks most relevant to `query`, optionally limited to one
+    document. Same user-scoped vector search that quiz generation uses; the web
+    backend calls this to build flashcards from real document content.
+    """
+    try:
+        results = get_service().embedder.search(
+            body.query, top_k=body.top_k, user_id=user_id, document_id=body.document_id
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Retrieval failed: {exc}") from exc
+    chunks = [
+        {"text": r.get("text", ""), "title": r.get("title", ""), "score": r.get("score")}
+        for r in (results or [])
+        if (r.get("text") or "").strip()
+    ]
+    return RetrieveContextResponse(success=True, chunks=chunks)
 
 
 @app.post("/generate-quiz", response_model=GenerateQuizResponse)

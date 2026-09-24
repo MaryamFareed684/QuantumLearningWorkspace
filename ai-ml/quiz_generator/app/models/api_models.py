@@ -45,3 +45,20 @@ class GenerateQuizResponse(BaseModel):
     message: str
     questions: list[dict] = Field(default_factory=list)
     answers: list[dict] = Field(default_factory=list)
+
+
+class RetrieveContextRequest(BaseModel):
+    """Request body for POST /retrieve-context (used by flashcard generation)."""
+
+    query: str = Field(..., min_length=1, max_length=500, description="Topic to retrieve study material for.")
+    top_k: int = Field(default=6, ge=1, le=12, description="Number of chunks to return.")
+    document_id: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description="Optional: only search this document (chunk metadata document_id).",
+    )
+
+
+class RetrieveContextResponse(BaseModel):
+    success: bool
+    chunks: list[dict] = Field(default_factory=list)
