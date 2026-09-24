@@ -25,6 +25,9 @@ from web.backend.models import (
 
 router = APIRouter(tags=["flashcards"])
 
+# Last reason AI generation produced no cards (shown by /flashcards/ai-status).
+_AI_STATUS: Dict[str, Optional[str]] = {"last_error": None}
+
 # ==========================================
 # Flashcard Generator Engine (Synthetic & Fallback)
 # ==========================================
@@ -219,6 +222,9 @@ async def _generate_groq_flashcards(
     """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
+        # Without a key every request falls back to generic template cards; say so.
+        _AI_STATUS["last_error"] = "GROQ_API_KEY is not set on this service"
+        logger.warning("GROQ_API_KEY is not set: flashcards fall back to generic template cards")
         return []
 
     model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -318,8 +324,10 @@ Format:
                         difficulty=difficulty,
                     )
                 )
+        _AI_STATUS["last_error"] = None if cards else "Groq returned no usable cards"
         return cards[:count]
     except Exception as e:
+        _AI_STATUS["last_error"] = f"{type(e).__name__}: {e}"[:300]
         logger.warning(f"Groq flashcards generation encountered an error: {e}")
         return []
 
@@ -420,6 +428,20 @@ async def extract_document_topics(
         topics=topics,
         default_topic=clean_base,
     )
+
+
+@router.get("/flashcards/ai-status")
+async def flashcards_ai_status(current_user_email: str = Depends(get_current_user_email)):
+    """
+    Whether AI flashcard generation is configured, for diagnosing generic
+    template cards. Reports only whether settings are present, never their values.
+    """
+    return {
+        "groq_api_key_set": bool(os.getenv("GROQ_API_KEY")),
+        "groq_model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+        "quiz_service_url_set": bool(os.getenv("QUIZ_SERVICE_URL")),
+        "last_ai_error": _AI_STATUS["last_error"],
+    }
 
 
 @router.post("/generate-flashcards", response_model=GenerateFlashcardsResponse)
