@@ -9,6 +9,7 @@ from groq import AsyncGroq
 from fastapi import APIRouter, HTTPException, Depends, Header, status
 import re
 from web.backend.auth_utils import get_current_user_email
+from web.backend.flashcard_context import retrieve_flashcard_context
 from web.backend import database
 from web.backend.models import (
     Flashcard,
@@ -223,13 +224,35 @@ async def _generate_groq_flashcards(
     model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     client = AsyncGroq(api_key=api_key, timeout=25.0)
 
-    prompt_content = ""
-    if content and content.strip():
-        prompt_content = f"\nUse this reference text as the primary source:\n{content.strip()[:2500]}\n"
+    reference = (content or "").strip()
+    if reference:
+        # Grounded in the user's own study material (retrieved chunks or pasted notes).
+        prompt = f"""You are an expert academic tutor. Create exactly {count} study flashcards about "{topic}" (difficulty: {difficulty}) from the study material below.
 
-    prompt = f"""You are an expert academic tutor. Generate exactly {count} distinct, high-quality study flashcards for the topic: "{topic}".
+Study material:
+<
+{reference[:6000]}
+>>>
+
+Rules:
+- Base every card on specific content in the study material: definitions of terms, formulas or equations and what their symbols mean, worked examples, applications, assumptions, and how concepts relate to or differ from each other.
+- Ask about the actual concepts, terms and results in the material, never about the topic label itself. Do NOT write questions like "What is the definition of {topic}?", "What are the core concepts of {topic}?" or "Explain {topic}."
+- Prefer the parts of the material that relate to "{topic}"; ignore passages that are unrelated.
+- Every answer must be correct according to the material, self-contained, and 1-3 sentences long.
+- No two cards may test the same fact.
+- Return ONLY a valid JSON array of objects with keys "front" and "back". No markdown backticks, no introduction, no outro.
+
+Format:
+[
+  {{
+    "front": "Specific question grounded in the material",
+    "back": "Accurate, concise answer"
+  }}
+]"""
+    else:
+        prompt = f"""You are an expert academic tutor. Generate exactly {count} distinct, high-quality study flashcards for the topic: "{topic}".
 Difficulty level: {difficulty}.
-{prompt_content}
+
 Rules:
 - Each flashcard must test a concrete, important fact, concept, definition, mechanism, or principle specifically about "{topic}".
 - Do NOT use generic template phrasing (e.g. "What is the primary definition and scope of...").
@@ -250,7 +273,7 @@ Format:
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
-            max_tokens=1500,
+            max_tokens=3000,
         )
         raw_text = response.choices[0].message.content.strip()
 
@@ -421,18 +444,28 @@ async def generate_flashcards(
     difficulty = request.difficulty or "medium"
     topic_cleaned = request.topic.strip()
 
-    # If document_id is provided and content is empty, extract text from document
-    effective_content = request.content
+    # Study material for the LLM, best source first:
+    #   1. notes the user pasted in,
+    #   2. the chunks from the user's documents most relevant to the topic
+    #      (limited to the selected document when there is one),
+    #   3. the document's PDF text, if the file is still on disk.
+    user_notes = (request.content or "").strip() or None
+    effective_content = user_notes
+    if not effective_content:
+        effective_content = await retrieve_flashcard_context(
+            current_user_email.strip().lower(), topic_cleaned, request.document_id
+        )
     if not effective_content and request.document_id:
         effective_content = _extract_document_text(request.document_id)
 
-    # If structured key-value notes content is provided (e.g. "Term: Definition"), extract directly
-    if effective_content and ":" in effective_content:
+    # Notes the user typed as "Term: Definition" lines become cards directly. Only for
+    # pasted notes: document text almost always contains a colon somewhere.
+    if user_notes and ":" in user_notes:
         synthetic = _generate_synthetic_cards(
             topic=topic_cleaned,
             count=num_cards,
             difficulty=difficulty,
-            content=effective_content,
+            content=user_notes,
         )
         if len(synthetic) >= num_cards:
             return GenerateFlashcardsResponse(
@@ -460,7 +493,8 @@ async def generate_flashcards(
             topic=topic_cleaned,
             count=num_cards - len(cards),
             difficulty=difficulty,
-            content=effective_content,
+            # Line-by-line templates only make sense for the user's own notes.
+            content=user_notes,
         )
         cards.extend(fallback)
 
