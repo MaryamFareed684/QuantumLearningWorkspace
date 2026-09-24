@@ -29,10 +29,10 @@ function UploadView({ onUploadSuccess }) {
       return;
     }
 
-    const MAX_SIZE = 10 * 1024 * 1024;
+    const MAX_SIZE = 50 * 1024 * 1024;
     if (selectedFile.size > MAX_SIZE) {
       setStatus("error");
-      setMessage("File size exceeds the 10MB limit.");
+      setMessage("File size exceeds the 50MB limit.");
       return;
     }
 

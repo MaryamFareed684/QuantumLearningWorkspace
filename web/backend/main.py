@@ -35,6 +35,9 @@ from web.backend.models import (
 from web.backend.email_service import send_otp_email
 from web.backend.question_counter import count_meaningful_questions
 from web.backend.document_stats import extract_document_stats, format_file_size
+
+# Largest PDF accepted by /upload; the frontend checks the same limit.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 import asyncio
 import random
 import secrets
@@ -122,13 +125,18 @@ async def process_file_ingestion(file_id: Any, document_id: str, filename: str, 
     chunks_stored = 0
     last_error = None
     returned_document_id = document_id
+    ingested_word_count = None
 
     if os.path.exists(file_path):
         try:
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
 
-            async with httpx.AsyncClient(timeout=120) as client: 
+            # Extracting, chunking and embedding a large PDF can take several minutes.
+            # This runs in the background, so wait up to 15 minutes for the response.
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=30.0, read=900.0, write=300.0, pool=30.0)
+            ) as client:
                 internal_token = create_access_token(email=user_id) 
                 response = await client.post( 
                     f"{INGESTION_SERVICE_URL.rstrip('/')}/ingest/pdf", 
@@ -141,6 +149,9 @@ async def process_file_ingestion(file_id: Any, document_id: str, filename: str, 
                     data = response.json()
                     returned_document_id = data.get("document_id") or document_id
                     chunks_stored = data.get("chunks_stored", 0)
+                    # The ingestion service returns the text it extracted; count words
+                    # from it instead of re-reading the whole PDF with pypdf.
+                    ingested_word_count = len((data.get("text") or "").split()) or None
                     new_status = "Ready"
                 except Exception:
                     new_status = "Ready"
@@ -165,7 +176,11 @@ async def process_file_ingestion(file_id: Any, document_id: str, filename: str, 
 
     # File size / page count / word count, saved on the upload record so the
     # document info view does not depend on the file staying on disk.
-    document_stats = await asyncio.to_thread(extract_document_stats, file_path, filename)
+    document_stats = await asyncio.to_thread(
+        extract_document_stats, file_path, filename, ingested_word_count is None
+    )
+    if ingested_word_count:
+        document_stats["word_count"] = ingested_word_count
 
     query: Dict[str, Any] = {"user_id": user_id}
     if file_id:
@@ -894,6 +909,15 @@ async def upload_file(
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
+    # Same limit as the frontend, enforced here too so larger files cannot be
+    # pushed into the ingestion pipeline by calling the API directly.
+    if os.path.getsize(file_path) > MAX_UPLOAD_BYTES:
+        os.remove(file_path)
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
+        )
 
     upload_record = Upload(
         filename=filename,

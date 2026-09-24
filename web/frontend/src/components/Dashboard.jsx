@@ -582,9 +582,9 @@ function DocumentsView({
       return;
     }
 
-    const MAX_SIZE = 10 * 1024 * 1024;
+    const MAX_SIZE = 50 * 1024 * 1024;
     if (selectedFile.size > MAX_SIZE) {
-      const msg = "File size exceeds the 10MB limit.";
+      const msg = "File size exceeds the 50MB limit.";
       setUploadMsg(msg);
       setUploadStatus("error");
       showToast(msg, "error");
