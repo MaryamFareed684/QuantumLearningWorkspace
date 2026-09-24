@@ -13,7 +13,15 @@ from typing import Any, Dict, Optional
 from pypdf import PdfReader
 
 
-def extract_document_stats(file_path: Optional[str], filename: str = "") -> Dict[str, Any]:
+# Counting words means extracting the text of every page with pypdf, which is
+# slow for big PDFs; above this size the word count is left to the ingestion
+# service, which already extracts the text (see process_file_ingestion).
+WORD_COUNT_MAX_BYTES = 15 * 1024 * 1024
+
+
+def extract_document_stats(
+    file_path: Optional[str], filename: str = "", count_words: bool = True
+) -> Dict[str, Any]:
     """
     Returns only the values that could be determined:
     {"file_size_bytes": int, "page_count": int, "word_count": int}.
@@ -28,9 +36,10 @@ def extract_document_stats(file_path: Optional[str], filename: str = "") -> Dict
         try:
             reader = PdfReader(file_path)
             stats["page_count"] = len(reader.pages)
-            text = "".join((page.extract_text() or "") for page in reader.pages)
-            if text.strip():
-                stats["word_count"] = len(text.split())
+            if count_words and stats["file_size_bytes"] <= WORD_COUNT_MAX_BYTES:
+                text = "".join((page.extract_text() or "") for page in reader.pages)
+                if text.strip():
+                    stats["word_count"] = len(text.split())
         except Exception:
             pass
     return stats
